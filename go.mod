@@ -8,4 +8,8 @@ require (
 	golang.org/x/term v0.28.0
 )
 
-require golang.org/x/sys v0.29.0 // indirect
+require (
+	github.com/mattn/go-runewidth v0.0.3 // indirect
+	github.com/peterh/liner v1.2.2 // indirect
+	golang.org/x/sys v0.29.0 // indirect
+)

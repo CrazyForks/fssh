@@ -20,8 +20,8 @@ import (
 
 func main() {
     if len(os.Args) < 2 {
-        usage()
-        os.Exit(2)
+        runShell()
+        return
     }
     cmd := os.Args[1]
     switch cmd {
@@ -41,6 +41,8 @@ func main() {
         cmdRemove()
     case "rekey":
         cmdRekey()
+    case "shell":
+        runShell()
     default:
         usage()
         os.Exit(2)
@@ -48,7 +50,7 @@ func main() {
 }
 
 func usage() {
-    fmt.Fprintf(os.Stderr, "usage: fssh <init|import|list|export|remove|rekey|status|agent>\n")
+    fmt.Fprintf(os.Stderr, "usage: fssh <init|import|list|export|remove|rekey|status|agent|shell>\n")
 }
 
 func cmdInit() {
