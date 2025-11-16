@@ -1,80 +1,118 @@
-# fssh
+# fssh — Touch ID–Protected SSH Agent and CLI
 
-macOS 安装与开机自启请参阅 docs/macos.md，其中包含 `launchd` 配置示例（contrib/com.fssh.agent.plist）。
+## Overview
+- Securely store and use SSH private keys on macOS with Touch ID (or equivalent local authentication)
+- Provide an SSH agent that can operate in two modes:
+  - Secure per‑sign unlock: prompts for Touch ID on each signature (or within a configurable TTL window)
+  - Convenience preload: decrypts keys once and keeps them in memory for subsequent signatures
+- Interactive shell to discover hosts from `~/.ssh/config` and connect fast with tab completion
+- macOS login auto‑start via `launchd` and a generic LaunchAgent plist
 
-在 macOS 上通过 Touch ID 解锁对称主密钥，解密本地加密的 SSH 私钥并用于登录；同时提供兼容 OpenSSH 的 ssh-agent。
+## Key Features
+- Touch ID‑protected master key, stored in macOS Keychain
+- Encrypted key store at `~/.fssh/keys/<alias>.enc` using PKCS#8 + AES‑GCM
+- RSA‑SHA2 signatures (`rsa‑sha2‑256/512`) supported by the agent
+- Multiple keys import with unique `alias`
+- Configurable agent socket and logging via `~/.fssh/config.json`
+- Optional Touch ID TTL (`unlock_ttl_seconds`) to avoid repeated prompts in secure mode
+- `config-gen` to generate local `~/.ssh/config` entries with `IdentityAgent`
+- `sshd-align` to align server‑side `sshd_config` for RSA‑SHA2 algorithms
 
-## 功能概述
-- 通过 Touch ID/用户在场验证读取主密钥（存储于 Keychain）
-- 使用 AES-256-GCM + HKDF 加密私钥（每文件独立 `salt`/`nonce`）
-- 私钥导入/导出（统一为 PKCS#8 PEM 备份）、列出与状态检查
-- 提供 ssh-agent：
-  - 支持“每次签名都触发指纹”模式（默认开启）
-  - 不将明文私钥写回磁盘，签名仅在内存中完成
+## Install (macOS)
+- Build: `go build ./cmd/fssh`
+- Place binary: `mv fssh /usr/local/bin/`
+- Initialize: `fssh init`
+- Import keys: `fssh import --alias work --file ~/.ssh/id_ed25519 --ask-passphrase`
 
-## 安装与构建
-- 依赖：Go 1.21+、macOS 13+（含 Touch ID 或 Apple Watch 解锁）
-- 构建：
-  - `go build ./cmd/fssh`
-  - 生成二进制 `./fssh`
+## Configuration
+- File: `~/.fssh/config.json`
+- Example:
+```
+{
+  "socket": "~/.fssh/agent.sock",
+  "require_touch_id_per_sign": true,
+  "unlock_ttl_seconds": 600,
+  "log_out": "/var/tmp/fssh-agent.out.log",
+  "log_err": "/var/tmp/fssh-agent.err.log",
+  "log_level": "info",
+  "log_format": "plain",
+  "log_time_format": "2006-01-02T15:04:05Z07:00"
+}
+```
+- Precedence: CLI flags > config file > defaults
 
-## 快速开始
-1. 初始化主密钥：
-   - `./fssh init`
-2. 导入私钥：
-   - 无口令私钥：`./fssh import --alias work --file ~/.ssh/id_ed25519`
-   - 有口令私钥（安全输入）：
-     - 交互式读取：`./fssh import --alias work --file ~/.ssh/id_ed25519 --ask-passphrase`
-     - 从文件读取：`./fssh import --alias work --file ~/.ssh/id_ed25519 --passphrase-file /secure/path/pass.txt`
-     - 从 stdin 读取：`echo -n '<原口令>' | ./fssh import --alias work --file ~/.ssh/id_ed25519 --passphrase-stdin`
-3. 启动按签名解锁的 agent：
-   - `./fssh agent --require-touch-id-per-sign=true --socket ./agent.sock`
-   - `export SSH_AUTH_SOCK=$(pwd)/agent.sock`
-   - 验证：`ssh-add -l`（列出公钥，签名时会弹出 Touch ID）
+## Start Agent
+- Foreground: `fssh agent`
+- With TTL: `fssh agent --unlock-ttl-seconds 600`
+- Use in shell: `export SSH_AUTH_SOCK=~/.fssh/agent.sock`
 
-## 命令说明
-- `fssh init`
-  - 生成并写入主密钥到 Keychain（GenericPassword，解锁前会触发 Touch ID）
-  - 可选：`--force` 覆盖已存在主密钥
-- `fssh import --alias <name> --file <path> [--passphrase <p>] [--comment <c>]`
-  - 解析 OpenSSH 私钥，统一序列化为 PKCS#8 DER，并加密保存为 `~/.fssh/keys/<alias>.enc`
-- `fssh list`
-  - 列出已导入的别名、指纹与创建时间
-- `fssh export --alias <name> --out <path> [--ask-passphrase|--passphrase-file <pfile>|--passphrase-stdin] [--force]`
-  - 解密指定别名并导出为 PKCS#8 PEM；可选使用备份口令（PEM AES-256）
-   - 不推荐直接用 `--passphrase '<口令>'` 在命令行传参，避免泄露风险
-- `fssh remove --alias <name>`
-  - 删除指定别名的加密私钥文件（访问主密钥前会触发 Touch ID）
-- `fssh rekey`
-  - 重新生成主密钥，并对所有记录进行“解密→用新主密钥重加密”，最后更新 Keychain
-- `fssh status`
-  - 查看主密钥是否存在、存储目录状态
-- `fssh agent [--socket <path>] [--require-touch-id-per-sign=<true|false>]`
-  - 启动 ssh-agent 服务，监听 UNIX socket；默认按签名触发指纹
+## Auto‑Start on Login (LaunchAgents)
+- Copy plist: `cp contrib/com.fssh.agent.plist ~/Library/LaunchAgents/com.fssh.agent.plist`
+- Load: `launchctl load -w ~/Library/LaunchAgents/com.fssh.agent.plist`
+- Reload after config changes:
+  - Preferred: `launchctl kickstart -k gui/$(id -u)/com.fssh.agent`
+  - Legacy: `launchctl unload -w ~/Library/LaunchAgents/com.fssh.agent.plist && launchctl load -w ~/Library/LaunchAgents/com.fssh.agent.plist`
 
-## SSH agent 使用
-- 建议使用项目目录中的 socket，避免家目录权限限制：
-  - `./fssh agent --socket ./agent.sock`
-  - `export SSH_AUTH_SOCK=$(pwd)/agent.sock`
-- 列出 agent 身份：`ssh-add -l`
-- 使用 ssh 登录：`ssh user@host`（OpenSSH 会调用 agent 完成签名）
+## Interactive Shell
+- Start: `fssh` or `fssh shell`
+- Commands:
+  - `list` — show `id\thost(ip)`
+  - `search <term>` — filter by id/host/ip
+  - `connect <id|host|ip>` — connect via OpenSSH
+  - Tab completion for commands and host/id/ip
+  - Non‑command input defaults to `connect`
 
-## 安全设计
-- 主密钥保护：macOS Keychain + Touch ID/用户在场验证（LocalAuthentication）
-- 数据加密：AES-256-GCM；HKDF(master, salt, info=alias) 派生文件级密钥；AEAD 绑定 `fingerprint` 作为 AAD
-- 内存策略：签名所需的私钥仅在内存中存在；不落盘明文
-- 记录元数据：保存 `pubkey`（base64 的 `Marshal()`）、`fingerprint`，agent 列表无需解密
+## Config Generator
+- Print block: `fssh config-gen --host backuphost --user root`
+- Write to file: `fssh config-gen --host backuphost --user root --write`
+- Overwrite existing: `fssh config-gen --host backuphost --overwrite --write`
+- Global algorithms (optional): `fssh config-gen --global-algos --write` adds RSA‑SHA2 once to `Host *`
+- Generated host block contains `IdentityAgent` and optional `User/Port`; per‑host algorithm lines are not added by default
 
-## 存储格式（fingerpass/v1）
-JSON 文件 `~/.fssh/keys/<alias>.enc` 字段：
-- `version`、`alias`、`fingerprint`、`pubkey`、`key_type`（PKCS8）、`hkdf_salt`、`nonce`、`ciphertext`、`created_at`、`comment`
+## Server Alignment (Optional)
+- Align RSA‑SHA2 on server: `fssh sshd-align --host backuphost --sudo`
+- Changes on remote `/etc/ssh/sshd_config`:
+  - `PubkeyAuthentication yes`
+  - `PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256`
+  - `PubkeyAcceptedKeyTypes +rsa-sha2-512,rsa-sha2-256` (compat)
 
-## 常见问题
-- “The agent has no identities”：请确认已导入私钥并启动 agent；`ssh-add -l` 只读取 `SSH_AUTH_SOCK` 指定的 socket。
-- 删除家目录下的 socket 失败：使用 `--socket ./agent.sock` 在工程目录启动。
-- 指纹集合变化后读取失败：执行 `fssh rekey` 重建主密钥并重加密。
+## Troubleshooting
+- “incorrect signature type / no mutual signature supported”
+  - Ensure agent is running and environment: `export SSH_AUTH_SOCK=~/.fssh/agent.sock`
+  - Client config for host uses agent: `IdentityAgent ~/.fssh/agent.sock`
+  - Server accepts RSA‑SHA2 (use `sshd-align` or edit `sshd_config`)
+- Input not visible after connect
+  - Agent shell uses `ssh -tt` and suspends line editor during remote session
+- Logging
+  - Configure `log_out/log_err`, `log_level`, `log_format`; restart agent after changes
 
-## 路线图
-- 在 `Sign` 阶段通过 SecItem 的 AccessControl 强绑定生物识别，进一步收紧策略
-- 会话 TTL 与缓存控制、每次签名必触发与“会话内一次触发”两种模式切换
-- `fssh ssh` 便捷封装命令
+## Security Notes
+- Secure mode: per‑sign unlock (or TTL cache) reduces risk by avoiding long‑lived decrypted keys
+- Convenience mode: preload all keys into memory; prefer only when prompts are impractical
+- Never store plaintext secrets in the repo or logs; use Keychain and config paths
+
+## Comparison to Secretive
+- Storage model
+  - Secretive: keys in Secure Enclave, non‑exportable by design
+  - fssh: PKCS#8 encrypted files in `~/.fssh/keys` with Touch ID‑protected master key in Keychain; optional password‑protected PEM export for recovery
+- Access control
+  - Secretive: Touch ID/Apple Watch gate before key access; access notifications
+  - fssh: LocalAuthentication on each signature or within a configurable TTL window; no notifications yet
+- Hardware support
+  - Secretive: Smart Card/YubiKey supported for Macs without SE
+  - fssh: no smart card support yet (roadmap)
+- Agent and algorithms
+  - Secretive: signs with SE‑backed keys (non‑exportable)
+  - fssh: OpenSSH‑compatible agent with RSA‑SHA2 (`rsa‑sha2‑256/512`) extended signatures; includes `sshd-align` to align server algorithms
+- Developer and ops tools
+  - Secretive: native app experience and Homebrew install
+  - fssh: CLI and interactive shell (host parsing, tab completion, default connect), `config-gen` to write `IdentityAgent` entries, generic `launchd` auto‑start, unified logging
+- Platform
+  - Secretive: macOS with Secure Enclave
+  - fssh: macOS today; planned cross‑platform support
+
+## Credits
+- This project is assisted by TRAE AI software
+
+## License
+- Proprietary project (example). Adjust this section as appropriate for your distribution.
