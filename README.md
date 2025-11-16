@@ -1,5 +1,15 @@
 # fssh — Touch ID–Protected SSH Agent and CLI
 
+## Use Cases
+- Plaintext SSH keys on disk are risky and easy to exfiltrate
+- Encrypted keys require entering passphrases for every SSH login, which is inconvenient
+- With many hosts in `~/.ssh/config`, aliases are easy to forget; you often need to open the file before every connection
+
+## Solution (fssh — finger‑ssh)
+- On macOS, unlock a Touch ID–protected master key to decrypt local encrypted SSH keys for authentication
+- Provide an OpenSSH‑compatible ssh‑agent
+- An interactive shell that parses hosts from `~/.ssh/config`, supports search and direct connect
+
 ## Overview
 - Securely store and use SSH private keys on macOS with Touch ID (or equivalent local authentication)
 - Provide an SSH agent that can operate in two modes:

@@ -1,5 +1,14 @@
 # fssh
 
+ - 使用场景
+   - 明文 SSH 密钥在本地磁盘上存在风险
+   - 加密密钥每次登录都需输入口令，使用成本高
+   - ~/.ssh/config 主机多时，别名易忘，连接前常要查文件
+ - 解决方案
+   - 在 macOS 上通过 Touch ID 解锁主密钥，解密本地加密的 SSH 私钥用于认证
+   - 提供兼容 OpenSSH 的 ssh-agent
+   - 交互式 Shell 从 ~/.ssh/config 读取主机，支持查询并直接连接
+
 macOS 安装与开机自启请参阅 `docs/macos.md`（包含 `launchd` 配置示例）。
 
 在 macOS 上通过 Touch ID 解锁主密钥，解密本地加密的 SSH 私钥并用于登录；同时提供兼容 OpenSSH 的 ssh-agent 与交互式 Shell。
