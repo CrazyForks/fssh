@@ -18,12 +18,15 @@ When SSH connects to a remote host, it prompts for fingerprint authentication, w
 
 ## Screenshots
 SSH connection with fingerprint unlock:
+
 ![Touch ID authentication](images/finger.png)
 
 Viewing hosts from `~/.ssh/config` in the interactive shell:
+
 ![Interactive shell](images/shell.png)
 
 Connecting to a host from the interactive shell:
+
 ![SSH connection](images/login.png)
 
 ## Features
@@ -91,7 +94,7 @@ host *
   - Tab completion covers commands and id/host/ip
 
 ## Troubleshooting
-- "incorrect signature type / no mutual signature supported"
+- `"incorrect signature type / no mutual signature supported"`
   - Confirm agent is running and set `SSH_AUTH_SOCK=~/.fssh/agent.sock`
   - Local entries should include `IdentityAgent ~/.fssh/agent.sock`
   - Server accepts RSA-SHA2 (use `sshd-align` or manually edit)
