@@ -1,142 +1,107 @@
-# fssh — Touch ID–Protected SSH Agent and CLI
+# fssh
+
+![Touch ID Fingerprint](images/finger.png)
+
+A solution for macOS that eliminates the need to manually unlock private keys with passphrases every time you use public key authentication, and helps you quickly view and connect to SSH hosts configured in `~/.ssh/config` without having to open the config file each time.
+
+When SSH connects to a remote host, it prompts for fingerprint authentication, which decrypts and imports the private key upon successful verification. Additionally, fssh provides an interactive shell where you can quickly view and connect to hosts defined in `~/.ssh/config`.
 
 ## Use Cases
-- Plaintext SSH keys on disk are risky and easy to exfiltrate
-- Encrypted keys require entering passphrases for every SSH login, which is inconvenient
-- With many hosts in `~/.ssh/config`, aliases are easy to forget; you often need to open the file before every connection
+- Plaintext SSH keys stored locally on disk pose security risks
+- Encrypted keys require entering passphrases every time you connect, which is inconvenient
+- When multiple hosts are configured in `~/.ssh/config`, their aliases are easy to forget over time, requiring you to check the config file before each connection
 
-## Solution (fssh — finger‑ssh)
-- On macOS, unlock a Touch ID–protected master key to decrypt local encrypted SSH keys for authentication
-- Provide an OpenSSH‑compatible ssh‑agent
-- An interactive shell that parses hosts from `~/.ssh/config`, supports search and direct connect
+## Solutions
+- Automatically prompts for Touch ID fingerprint verification when using SSH commands to connect to hosts on macOS, then uses the master key to decrypt SSH private keys for authentication
+- Compatible with OpenSSH's ssh-agent
+- Running `fssh` directly launches an interactive shell where you can use commands like `list` and `connect` to view host information from `~/.ssh/config`. In this shell, you can enter a host's ID, host name, or IP directly to connect via SSH
 
-## Overview
-- Securely store and use SSH private keys on macOS with Touch ID (or equivalent local authentication)
-- Provide an SSH agent that can operate in two modes:
-  - Secure per‑sign unlock: prompts for Touch ID on each signature (or within a configurable TTL window)
-  - Convenience preload: decrypts keys once and keeps them in memory for subsequent signatures
-- Interactive shell to discover hosts from `~/.ssh/config` and connect fast with tab completion
-- macOS login auto‑start via `launchd` and a generic LaunchAgent plist
+## Screenshots
+SSH connection with fingerprint unlock:
+![Touch ID authentication](images/finger.png)
 
-## Key Features
-- Touch ID‑protected master key, stored in macOS Keychain
-- Encrypted key store at `~/.fssh/keys/<alias>.enc` using PKCS#8 + AES‑GCM
-- RSA‑SHA2 signatures (`rsa‑sha2‑256/512`) supported by the agent
-- Multiple keys import with unique `alias`
-- Configurable agent socket and logging via `~/.fssh/config.json`
-- Optional Touch ID TTL (`unlock_ttl_seconds`) to avoid repeated prompts in secure mode
-- `config-gen` to generate local `~/.ssh/config` entries with `IdentityAgent`
-- `sshd-align` to align server‑side `sshd_config` for RSA‑SHA2 algorithms
+Viewing hosts from `~/.ssh/config` in the interactive shell:
+![Interactive shell](images/shell.png)
 
-## Install (macOS)
-- Build: `go build ./cmd/fssh`
-- Place binary: `mv fssh /usr/local/bin/`
-- Initialize: `fssh init`
-- Import keys: `fssh import --alias work --file ~/.ssh/id_ed25519 --ask-passphrase`
-- Config ssh agent,File: `~/.ssh/config`
-- Example:
+Connecting to a host from the interactive shell:
+![SSH connection](images/login.png)
+
+## Features
+- Touch ID/Local authentication to read master key (stored in Keychain)
+- AES-256-GCM + HKDF encryption for private keys (independent `salt`/`nonce` per file)
+- Private key import/export (PKCS#8 PEM backup), listing and status checking
+- ssh-agent:
+  - Supports fingerprint verification per signature, or configure TTL for repeat access within a short time window
+  - Compatible with RSA-SHA2 (rsa-sha2-256/512)
+- Interactive Shell: parses `~/.ssh/config` hosts, Tab completion, default connection behavior
+- Configuration generator: automatically generates local `~/.ssh/config` entries with `IdentityAgent`
+
+## Installation & Configuration
+1. Build: `go build ./cmd/fssh`; install to `/usr/local/bin/fssh`
+2. Run `fssh init` to initialize the master key
+3. Run `fssh import -alias <string> -file <path/to/private> --ask-passphrase` to import private keys
+4. Start the SSH authentication agent: `fssh agent --unlock-ttl-seconds 600`
+5. Modify the `~/.ssh/config` file so all SSH connections go through the fssh agent (you can also use `export SSH_AUTH_SOCK=~/.fssh/agent.sock` to set the variable for specific use cases)
+
+Configure the OpenSSH agent by adding the following at the beginning of `~/.ssh/config`:
 ```
 host *
   ServerAliveInterval 30
   AddKeysToAgent yes
   ControlPersist 60
   ControlMaster auto
-  ControlPath ~/.ssh/shareconn/master-%r@%h:%p
-  Ciphers +aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
-  HostKeyAlgorithms +ssh-rsa
-  KexAlgorithms +diffie-hellman-group1-sha1
-  IdentityAgent  /Users/leo/.fssh/agent.sock
+  IdentityAgent  ~/.fssh/agent.sock
 ```
 
-## Configuration
-- File: `~/.fssh/config.json`
-- Example:
+6. If needed, create and modify the configuration file: `~/.fssh/config.json`, example:
 ```
 {
-  "socket": "~/.fssh/agent.sock",
-  "require_touch_id_per_sign": true,
-  "unlock_ttl_seconds": 600,
-  "log_out": "/var/tmp/fssh-agent.out.log",
-  "log_err": "/var/tmp/fssh-agent.err.log",
-  "log_level": "info",
-  "log_format": "plain",
-  "log_time_format": "2006-01-02T15:04:05Z07:00"
+    "socket":"~/.fssh/agent.sock",
+    "require_touch_id_per_sign":true,
+    "unlock_ttl_seconds":600,
+    "log_level":"info",
+    "log_format":"plain"
 }
 ```
-- Precedence: CLI flags > config file > defaults
 
-## Start Agent
-- Foreground: `fssh agent`
-- With TTL: `fssh agent --unlock-ttl-seconds 600`
-- Use in shell: `export SSH_AUTH_SOCK=~/.fssh/agent.sock`
+- socket: SSH agent socket location
+- require_touch_id_per_sign: Whether to require Touch ID verification on every SSH signature
+  - true: Security mode enabled, requires Touch ID on each signature (or after TTL expires)
+  - false: Convenience mode, decrypts all keys once during startup and keeps them in memory
+- unlock_ttl_seconds: Cache time window after Touch ID unlock
+- log_level: Controls log output level
+  - debug: Shows all logs (including cache hit information)
+  - info: Shows general information (default)
+  - warn: Shows warnings and errors only
+  - error: Shows only errors
+- log_format: Controls log output format
+  - plain: Human-readable plain format
+  - json: Structured JSON format
 
-## Auto‑Start on Login (LaunchAgents)
-- Copy plist: `cp contrib/com.fssh.agent.plist ~/Library/LaunchAgents/com.fssh.agent.plist`
-- Load: `launchctl load -w ~/Library/LaunchAgents/com.fssh.agent.plist`
-- Reload after config changes:
-  - Preferred: `launchctl kickstart -k gui/$(id -u)/com.fssh.agent`
-  - Legacy: `launchctl unload -w ~/Library/LaunchAgents/com.fssh.agent.plist && launchctl load -w ~/Library/LaunchAgents/com.fssh.agent.plist`
+## Auto-start on Login
+- Start agent: `fssh agent --unlock-ttl-seconds 600`
+- Auto-start: Copy `contrib/com.fssh.agent.plist` to `~/Library/LaunchAgents/` and run `launchctl load -w`; after modifying configuration, use `launchctl kickstart -k gui/$(id -u)/com.fssh.agent` to reload
 
 ## Interactive Shell
-- Start: `fssh` or `fssh shell`
+- Launch: `fssh` or `fssh shell`
 - Commands:
-  - `list` — show `id\thost(ip)`
-  - `search <term>` — filter by id/host/ip
-  - `connect <id|host|ip>` — connect via OpenSSH
-  - Tab completion for commands and host/id/ip
-  - Non‑command input defaults to `connect`
-
-## Config Generator
-- Print block: `fssh config-gen --host backuphost --user root`
-- Write to file: `fssh config-gen --host backuphost --user root --write`
-- Overwrite existing: `fssh config-gen --host backuphost --overwrite --write`
-- Global algorithms (optional): `fssh config-gen --global-algos --write` adds RSA‑SHA2 once to `Host *`
-- Generated host block contains `IdentityAgent` and optional `User/Port`; per‑host algorithm lines are not added by default
-
-## Server Alignment (Optional)
-- Align RSA‑SHA2 on server: `fssh sshd-align --host backuphost --sudo`
-- Changes on remote `/etc/ssh/sshd_config`:
-  - `PubkeyAuthentication yes`
-  - `PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256`
-  - `PubkeyAcceptedKeyTypes +rsa-sha2-512,rsa-sha2-256` (compat)
+  - `list` displays `id\thost(ip)`
+  - `search <term>` filters by id/host/ip
+  - `connect <id|host|ip>` initiates connection; non-command input defaults to connection
+  - Tab completion covers commands and id/host/ip
 
 ## Troubleshooting
-- “incorrect signature type / no mutual signature supported”
-  - Ensure agent is running and environment: `export SSH_AUTH_SOCK=~/.fssh/agent.sock`
-  - Client config for host uses agent: `IdentityAgent ~/.fssh/agent.sock`
-  - Server accepts RSA‑SHA2 (use `sshd-align` or edit `sshd_config`)
-- Input not visible after connect
-  - Agent shell uses `ssh -tt` and suspends line editor during remote session
-- Logging
-  - Configure `log_out/log_err`, `log_level`, `log_format`; restart agent after changes
+- "incorrect signature type / no mutual signature supported"
+  - Confirm agent is running and set `SSH_AUTH_SOCK=~/.fssh/agent.sock`
+  - Local entries should include `IdentityAgent ~/.fssh/agent.sock`
+  - Server accepts RSA-SHA2 (use `sshd-align` or manually edit)
+- Input invisible after connection: use `ssh -tt` and suspend line editing during remote session
+- Logging: configure `log_out/log_err`, `log_level`, `log_format`; restart agent after changes
 
 ## Security Notes
-- Secure mode: per‑sign unlock (or TTL cache) reduces risk by avoiding long‑lived decrypted keys
-- Convenience mode: preload all keys into memory; prefer only when prompts are impractical
-- Never store plaintext secrets in the repo or logs; use Keychain and config paths
-
-## Comparison to Secretive
-- Storage model
-  - Secretive: keys in Secure Enclave, non‑exportable by design
-  - fssh: PKCS#8 encrypted files in `~/.fssh/keys` with Touch ID‑protected master key in Keychain; optional password‑protected PEM export for recovery
-- Access control
-  - Secretive: Touch ID/Apple Watch gate before key access; access notifications
-  - fssh: LocalAuthentication on each signature or within a configurable TTL window; no notifications yet
-- Hardware support
-  - Secretive: Smart Card/YubiKey supported for Macs without SE
-  - fssh: no smart card support yet (roadmap)
-- Agent and algorithms
-  - Secretive: signs with SE‑backed keys (non‑exportable)
-  - fssh: OpenSSH‑compatible agent with RSA‑SHA2 (`rsa‑sha2‑256/512`) extended signatures; includes `sshd-align` to align server algorithms
-- Developer and ops tools
-  - Secretive: native app experience and Homebrew install
-  - fssh: CLI and interactive shell (host parsing, tab completion, default connect), `config-gen` to write `IdentityAgent` entries, generic `launchd` auto‑start, unified logging
-- Platform
-  - Secretive: macOS with Secure Enclave
-  - fssh: macOS today; planned cross‑platform support
+- Security mode: per-signature unlock (or TTL cache) avoids long-term decrypted private keys in memory
+- Convenience mode: decrypts and keeps in memory on startup; only use this when prompted too frequently
+- Avoid plaintext leakage: don't store plaintext keys/passwords in repositories or logs
 
 ## Credits
 - This project is assisted by TRAE AI software
-
-## License
-- Proprietary project (example). Adjust this section as appropriate for your distribution.

@@ -1,0 +1,95 @@
+name: Build macOS Binaries
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [darwin]
+        goarch: [amd64, arm64]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Verify Go version
+      run: go version
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ matrix.goos }}-${{ matrix.goarch }}-
+          ${{ runner.os }}-go-${{ matrix.goos }}-
+          ${{ runner.os }}-go-
+
+    - name: Build
+      env:
+        CGO_ENABLED: 0
+      run: |
+        mkdir -p dist
+        GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
+          -ldflags="-s -w" \
+          -trimpath \
+          -o dist/fssh-${{ matrix.goos }}-${{ matrix.goarch }} \
+          ./cmd/fssh
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: fssh-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/fssh-${{ matrix.goos }}-${{ matrix.goarch }}
+        retention-days: 30
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Display structure of downloaded files
+      run: find . -type f -name "fssh-*" | sort
+
+    - name: Create tarball
+      run: |
+        mkdir -p release
+        cp fssh-darwin-amd64/fssh-darwin-amd64 release/fssh-amd64
+        cp fssh-darwin-arm64/fssh-darwin-arm64 release/fssh-arm64
+        tar -czf release/fssh-macos.tar.gz -C release fssh-amd64 fssh-arm64
+        shasum -a 256 release/fssh-macos.tar.gz > release/fssh-macos.tar.gz.sha256
+        cat release/fssh-macos.tar.gz.sha256
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*
+        body: |
+          ## Binaries
+          - `fssh-amd64` - Intel Macs (x86_64)
+          - `fssh-arm64` - Apple Silicon Macs (M1, M2, M3)
+          - `fssh-macos.tar.gz` - Both binaries packed
+          - `fssh-macos.tar.gz.sha256` - SHA256 checksums
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
