@@ -33,6 +33,20 @@
 - Place binary: `mv fssh /usr/local/bin/`
 - Initialize: `fssh init`
 - Import keys: `fssh import --alias work --file ~/.ssh/id_ed25519 --ask-passphrase`
+- Config ssh agent,File: `~/.ssh/config`
+- Example:
+```
+host *
+  ServerAliveInterval 30
+  AddKeysToAgent yes
+  ControlPersist 60
+  ControlMaster auto
+  ControlPath ~/.ssh/shareconn/master-%r@%h:%p
+  Ciphers +aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  HostKeyAlgorithms +ssh-rsa
+  KexAlgorithms +diffie-hellman-group1-sha1
+  IdentityAgent  /Users/leo/.fssh/agent.sock
+```
 
 ## Configuration
 - File: `~/.fssh/config.json`

@@ -27,13 +27,26 @@ English documentation: see `README.md` for overview and macOS setup.
 
 ## 安装与配置
 - 构建：`go build ./cmd/fssh`；安装到 `/usr/local/bin/fssh`
+- 配置Agent代理,可以修改`~/.ssh/config`文件，并添加如下内容:
+`
+host *
+  ServerAliveInterval 30
+  AddKeysToAgent yes
+  ControlPersist 60
+  ControlMaster auto
+  ControlPath ~/.ssh/shareconn/master-%r@%h:%p
+  Ciphers +aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  HostKeyAlgorithms +ssh-rsa
+  KexAlgorithms +diffie-hellman-group1-sha1
+  IdentityAgent  /Users/leo/.fssh/agent.sock
+`
 - 配置文件：`~/.fssh/config.json`，示例：
   - `{"socket":"~/.fssh/agent.sock","require_touch_id_per_sign":true,"unlock_ttl_seconds":600,"log_level":"info","log_format":"plain"}`
 
 ## 启动与自启
 - 启动 agent：`fssh agent --unlock-ttl-seconds 600`
 - 使用代理：`export SSH_AUTH_SOCK=~/.fssh/agent.sock`
-- 自启：复制 `contrib/com.fssh.agent.plist` 到 `~/Library/LaunchAgents/` 并 `launchctl load -w`；修改配置后使用 `launchctl kickstart -k gui/$(id -u)/com.fssh.agent` 重载
+- 自启：复制 `contrib/com.fssh.agent.plist` 到 `~/Library/LaunchAgents/` 并执行命令`launchctl load -w`；修改配置后使用 `launchctl kickstart -k gui/$(id -u)/com.fssh.agent` 重载
 
 ## 交互式 Shell
 - 启动：`fssh` 或 `fssh shell`
