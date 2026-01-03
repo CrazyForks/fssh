@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
-	"time"
 
 	"encoding/json"
-	"fssh/internal/keychain"
+	"fssh/internal/auth"
 	"fssh/internal/log"
 	"fssh/internal/store"
 
@@ -22,14 +20,18 @@ import (
 )
 
 type secureAgent struct {
-	metas  []store.EncryptedFile
-	mu     sync.Mutex
-	cached []byte
-	expiry time.Time
-	ttl    int
+	authProvider auth.AuthProvider
+	metas        []store.EncryptedFile
 }
 
 func newSecureAgentWithTTL(ttlSeconds int) (*secureAgent, error) {
+	// 获取认证提供者
+	provider, err := auth.GetAuthProvider(ttlSeconds)
+	if err != nil {
+		return nil, err
+	}
+
+	// 加载所有加密私钥的元数据
 	dir := store.KeysDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -50,7 +52,16 @@ func newSecureAgentWithTTL(ttlSeconds int) (*secureAgent, error) {
 		}
 		metas = append(metas, m)
 	}
-	return &secureAgent{metas: metas, ttl: ttlSeconds}, nil
+
+	log.Info("创建安全 agent", map[string]interface{}{
+		"auth_mode": provider.Mode(),
+		"key_count": len(metas),
+	})
+
+	return &secureAgent{
+		authProvider: provider,
+		metas:        metas,
+	}, nil
 }
 
 func (a *secureAgent) List() ([]*xagent.Key, error) {
@@ -84,10 +95,13 @@ func (a *secureAgent) Sign(pubkey ssh.PublicKey, data []byte) (*ssh.Signature, e
 	if alias == "" {
 		return nil, errors.New("key not found")
 	}
-	mk, err := a.masterKey()
+
+	// 使用 AuthProvider 解锁 master key
+	mk, err := a.authProvider.UnlockMasterKey()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("认证失败: %w", err)
 	}
+
 	rec, err := store.LoadDecryptedRecord(alias, mk)
 	if err != nil {
 		return nil, err
@@ -100,9 +114,12 @@ func (a *secureAgent) Sign(pubkey ssh.PublicKey, data []byte) (*ssh.Signature, e
 	if err != nil {
 		return nil, err
 	}
-	if debugOn() {
-		debugf("agent sign default fp=%s type=%s", fp, signer.PublicKey().Type())
-	}
+
+	log.Debug("SSH 签名", map[string]interface{}{
+		"fingerprint": fp,
+		"key_type":    signer.PublicKey().Type(),
+	})
+
 	return signer.Sign(nil, data)
 }
 
@@ -119,10 +136,13 @@ func (a *secureAgent) SignWithFlags(pubkey ssh.PublicKey, data []byte, flags xag
 	if alias == "" {
 		return nil, errors.New("key not found")
 	}
-	mk, err := a.masterKey()
+
+	// 使用 AuthProvider 解锁 master key
+	mk, err := a.authProvider.UnlockMasterKey()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("认证失败: %w", err)
 	}
+
 	rec, err := store.LoadDecryptedRecord(alias, mk)
 	if err != nil {
 		return nil, err
@@ -144,15 +164,20 @@ func (a *secureAgent) SignWithFlags(pubkey ssh.PublicKey, data []byte, flags xag
 			algo = "rsa-sha2-256"
 		}
 		if algo != "" {
-			if debugOn() {
-				debugf("agent sign flags=%d algo=%s fp=%s", flags, algo, fp)
-			}
+			log.Debug("SSH 签名 (RSA-SHA2)", map[string]interface{}{
+				"fingerprint": fp,
+				"algorithm":   algo,
+				"flags":       flags,
+			})
 			return algSigner.SignWithAlgorithm(rand.Reader, data, algo)
 		}
 	}
-	if debugOn() {
-		debugf("agent sign flags=%d fallback fp=%s", flags, fp)
-	}
+
+	log.Debug("SSH 签名 (fallback)", map[string]interface{}{
+		"fingerprint": fp,
+		"flags":       flags,
+	})
+
 	return signer.Sign(nil, data)
 }
 
@@ -162,14 +187,14 @@ func (a *secureAgent) Extension(extensionType string, contents []byte) ([]byte, 
 		flags := uint32(xagent.SignatureFlagRsaSha256 | xagent.SignatureFlagRsaSha512)
 		b := make([]byte, 4)
 		binary.BigEndian.PutUint32(b, flags)
-		if debugOn() {
-			debugf("agent extension ext-info-c flags=%d", flags)
-		}
+		log.Debug("agent extension ext-info-c", map[string]interface{}{
+			"flags": flags,
+		})
 		return b, nil
 	}
-	if debugOn() {
-		debugf("agent extension unsupported type=%s", extensionType)
-	}
+	log.Debug("agent extension unsupported", map[string]interface{}{
+		"type": extensionType,
+	})
 	return nil, errors.New("unsupported extension")
 }
 
@@ -181,31 +206,3 @@ func (a *secureAgent) Unlock(passphrase []byte) error    { return nil }
 func (a *secureAgent) Signers() ([]ssh.Signer, error)    { return nil, errors.New("unsupported") }
 
 func jsonUnmarshal(b []byte, v interface{}) error { return json.Unmarshal(b, v) }
-
-func debugOn() bool {
-	v := os.Getenv("FSSH_DEBUG")
-	return v == "1" || v == "true" || v == "TRUE"
-}
-
-func debugf(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
-}
-
-func (a *secureAgent) masterKey() ([]byte, error) {
-	if a.ttl <= 0 {
-		return keychain.LoadMasterKey()
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	now := time.Now()
-	if a.cached != nil && now.Before(a.expiry) {
-		log.Debug("master key cache hit", map[string]interface{}{"expires_at": a.expiry.UTC().Format(time.RFC3339)})
-		return a.cached, nil
-	}
-	mk, err := keychain.LoadMasterKey()
-	if err != nil { return nil, err }
-	a.cached = mk
-	a.expiry = now.Add(time.Duration(a.ttl) * time.Second)
-	log.Info("master key unlocked", map[string]interface{}{"ttl_sec": a.ttl})
-	return mk, nil
-}
