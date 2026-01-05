@@ -1,5 +1,8 @@
 .trae
 .vscode
-.fss
+.fssh
 .env
 *.sock
+.claude
+CLAUDE.md
+fssh
