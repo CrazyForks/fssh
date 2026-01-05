@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(go version:*)",
+      "WebSearch",
+      "Bash(go build:*)",
+      "Bash(./fssh)",
+      "Bash(./fssh status:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

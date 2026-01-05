@@ -82,6 +82,12 @@ func LoadHostInfos() ([]HostInfo, error) {
     return out, nil
 }
 
+// LoadHostConfigs loads all hosts with complete configuration
+// This is a wrapper around LoadAllHostConfigs from writer.go
+func LoadHostConfigs() (map[string]*HostConfig, error) {
+	return LoadAllHostConfigs()
+}
+
 func parseKV(line string) (string, string) {
     // support "Key Value" and "Key=Value", case-insensitive key
     if eq := strings.Index(line, "="); eq >= 0 {

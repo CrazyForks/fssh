@@ -62,24 +62,21 @@ func usage() {
 func cmdInit() {
     fs := flag.NewFlagSet("init", flag.ExitOnError)
     force := fs.Bool("force", false, "recreate master key if exists")
+    mode := fs.String("mode", "touchid", "authentication mode: touchid or otp")
+    seedTTL := fs.Int("seed-unlock-ttl", 3600, "OTP seed cache time (seconds), OTP mode only")
+    algorithm := fs.String("algorithm", "SHA1", "TOTP algorithm: SHA1, SHA256, SHA512, OTP mode only")
+    digits := fs.Int("digits", 6, "TOTP digits: 6 or 8, OTP mode only")
     fs.Parse(os.Args[2:])
 
-    exists, err := keychain.MasterKeyExists()
-    if err != nil {
-        fatal(err)
+    // 根据模式选择初始化方式
+    switch *mode {
+    case "touchid":
+        initTouchIDMode(*force)
+    case "otp":
+        initOTPMode(*force, *seedTTL, *algorithm, *digits)
+    default:
+        fatal(fmt.Errorf("不支持的认证模式: %s (支持 touchid 或 otp)", *mode))
     }
-    if exists && !*force {
-        fmt.Println("master key already exists")
-        return
-    }
-    mk := make([]byte, 32)
-    if _, err := io.ReadFull(rand.Reader, mk); err != nil {
-        fatal(err)
-    }
-    if err := keychain.StoreMasterKey(mk, *force); err != nil {
-        fatal(err)
-    }
-    fmt.Println("initialized master key with Touch ID protection")
 }
 
 func cmdImport() {

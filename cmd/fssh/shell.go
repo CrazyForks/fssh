@@ -7,6 +7,7 @@ import (
     "os/exec"
     "strconv"
     "strings"
+    "syscall"
 
     "fssh/internal/sshconfig"
     "github.com/peterh/liner"
@@ -17,41 +18,60 @@ func runShell() {
     if err != nil {
         fatal(err)
     }
-    hosts := make([]string, 0, len(infos))
-    for _, hi := range infos { hosts = append(hosts, hi.Name) }
-    byName := map[string]sshconfig.HostInfo{}
-    for _, hi := range infos { byName[hi.Name] = hi }
-    byHostname := map[string]sshconfig.HostInfo{}
-    ipToName := map[string]string{}
-    hostnames := make([]string, 0, len(infos))
-    ips := make([]string, 0, len(infos))
-    idToName := map[string]string{}
-    ids := make([]string, 0, len(infos))
+
+    // Load imported keys
+    importedKeys, _ := listImportedKeys()
+
+    // Create context with all mappings
+    ctx := &ShellContext{
+        infos:        infos,
+        hosts:        make([]string, 0, len(infos)),
+        byName:       make(map[string]sshconfig.HostInfo),
+        byHostname:   make(map[string]sshconfig.HostInfo),
+        ipToName:     make(map[string]string),
+        idToName:     make(map[string]string),
+        hostnames:    make([]string, 0, len(infos)),
+        ips:          make([]string, 0, len(infos)),
+        ids:          make([]string, 0, len(infos)),
+        importedKeys: importedKeys,
+    }
+
+    for _, hi := range infos {
+        ctx.hosts = append(ctx.hosts, hi.Name)
+        ctx.byName[hi.Name] = hi
+    }
     for _, hi := range infos {
         hn := displayHostname(hi)
         if hn != "" {
-            byHostname[hn] = hi
-            hostnames = append(hostnames, hn)
+            ctx.byHostname[hn] = hi
+            ctx.hostnames = append(ctx.hostnames, hn)
         }
     }
     for i, hi := range infos {
         id := strconv.Itoa(i + 1)
-        idToName[id] = hi.Name
-        ids = append(ids, id)
+        ctx.idToName[id] = hi.Name
+        ctx.ids = append(ctx.ids, id)
     }
     for _, hi := range infos {
         hn := displayHostname(hi)
         ip := resolveIPName(hn)
         if ip != "" {
-            ips = append(ips, ip)
-            if _, ok := ipToName[ip]; !ok {
-                ipToName[ip] = hi.Name
+            ctx.ips = append(ctx.ips, ip)
+            if _, ok := ctx.ipToName[ip]; !ok {
+                ctx.ipToName[ip] = hi.Name
             }
         }
     }
-    commands := []string{"list", "search", "connect", "help", "exit", "quit"}
-    l := setupLiner(commands, hosts, hostnames, ips, ids)
-    defer l.Close()
+
+    commands := []string{"list", "search", "connect", "add", "edit", "delete", "show", "info", "suspend", "help", "exit", "quit"}
+    l := setupLiner(commands, ctx.hosts, ctx.hostnames, ctx.ips, ctx.ids)
+    ctx.liner = l
+    defer func() {
+        if l != nil {
+            l.Close()
+        }
+    }()
+
     for {
         line, err := l.Prompt("fssh> ")
         if err != nil {
@@ -65,12 +85,69 @@ func runShell() {
         if line == "exit" || line == "quit" {
             return
         }
+        if line == "suspend" {
+            // Close liner to restore terminal
+            l.Close()
+            // Send SIGTSTP to suspend the process
+            _ = syscall.Kill(syscall.Getpid(), syscall.SIGTSTP)
+            // When resumed (SIGCONT), recreate liner
+            l = setupLiner(commands, ctx.hosts, ctx.hostnames, ctx.ips, ctx.ids)
+            ctx.liner = l
+            continue
+        }
         if line == "help" {
-            fmt.Println("commands: list | search <term> | connect <host> | help | exit | Tab for completion; non-command defaults to connect")
+            fmt.Println("Commands:")
+            fmt.Println("  list              - List all SSH hosts")
+            fmt.Println("  search <term>     - Search hosts by name/IP")
+            fmt.Println("  connect <host>    - Connect to host")
+            fmt.Println("  add               - Add new SSH host")
+            fmt.Println("  edit <host>       - Edit existing host")
+            fmt.Println("  delete <host>     - Delete host")
+            fmt.Println("  show <host>       - Show host details")
+            fmt.Println("  info <id|alias|hostname|ip> - Show host info by any identifier")
+            fmt.Println("  suspend           - Suspend fssh (use 'fg' to resume)")
+            fmt.Println("  help              - Show this help")
+            fmt.Println("  exit / quit       - Exit shell")
+            fmt.Println()
+            fmt.Println("Shortcuts: Type host name directly to connect")
+            continue
+        }
+        if line == "add" {
+            if err := cmdAdd(ctx); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
+            continue
+        }
+        if strings.HasPrefix(line, "edit ") {
+            args := strings.TrimSpace(line[5:])
+            if err := cmdEdit(ctx, args); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
+            continue
+        }
+        if strings.HasPrefix(line, "delete ") {
+            args := strings.TrimSpace(line[7:])
+            if err := cmdDelete(ctx, args); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
+            continue
+        }
+        if strings.HasPrefix(line, "show ") {
+            args := strings.TrimSpace(line[5:])
+            if err := cmdShow(ctx, args); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
+            continue
+        }
+        if strings.HasPrefix(line, "info ") {
+            args := strings.TrimSpace(line[5:])
+            if err := cmdInfo(ctx, args); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
             continue
         }
         if line == "list" {
-            for i, hi := range infos {
+            for i, hi := range ctx.infos {
                 target := hi.Hostname
                 if target == "" { target = hi.Name }
                 ip := resolveIPName(target)
@@ -85,7 +162,7 @@ func runShell() {
                 continue
             }
             tl := strings.ToLower(term)
-            for i, hi := range infos {
+            for i, hi := range ctx.infos {
                 hn := hi.Hostname
                 target := hn
                 if target == "" { target = hi.Name }
@@ -103,18 +180,18 @@ func runShell() {
             if host == "" {
                 continue
             }
-            if name, ok := idToName[host]; ok {
+            if name, ok := ctx.idToName[host]; ok {
                 host = name
             }
-            _, found := byName[host]
+            _, found := ctx.byName[host]
             if !found {
-                if hi, ok := byHostname[host]; ok {
+                if hi, ok := ctx.byHostname[host]; ok {
                     host = hi.Name
                     found = true
                 }
             }
             if !found {
-                if name, ok := ipToName[host]; ok {
+                if name, ok := ctx.ipToName[host]; ok {
                     host = name
                     found = true
                 }
@@ -129,22 +206,23 @@ func runShell() {
             cmd.Stdout = os.Stdout
             cmd.Stderr = os.Stderr
             _ = cmd.Run()
-            l = setupLiner(commands, hosts, hostnames, ips, ids)
+            l = setupLiner(commands, ctx.hosts, ctx.hostnames, ctx.ips, ctx.ids)
+            ctx.liner = l
             continue
         }
         host := line
-        if name, ok := idToName[host]; ok {
+        if name, ok := ctx.idToName[host]; ok {
             host = name
         }
-        _, found := byName[host]
+        _, found := ctx.byName[host]
         if !found {
-            if hi, ok := byHostname[host]; ok {
+            if hi, ok := ctx.byHostname[host]; ok {
                 host = hi.Name
                 found = true
             }
         }
         if !found {
-            if name, ok := ipToName[host]; ok {
+            if name, ok := ctx.ipToName[host]; ok {
                 host = name
                 found = true
             }
@@ -159,13 +237,15 @@ func runShell() {
         cmd.Stdout = os.Stdout
         cmd.Stderr = os.Stderr
         _ = cmd.Run()
-        l = setupLiner(commands, hosts, hostnames, ips, ids)
+        l = setupLiner(commands, ctx.hosts, ctx.hostnames, ctx.ips, ctx.ids)
+        ctx.liner = l
     }
 }
 
 func setupLiner(commands, hosts, hostnames, ips, ids []string) *liner.State {
     l := liner.NewLiner()
     l.SetCtrlCAborts(true)
+
     l.SetCompleter(func(line string) []string {
         line = strings.TrimSpace(line)
         var out []string
@@ -177,29 +257,32 @@ func setupLiner(commands, hosts, hostnames, ips, ids []string) *liner.State {
             out = append(out, ids...)
             return out
         }
-        if strings.HasPrefix(line, "connect ") {
-            p := strings.TrimSpace(line[8:])
-            for _, h := range hosts {
-                if strings.HasPrefix(h, p) {
-                    out = append(out, "connect "+h)
+        // Tab completion for commands that take host arguments
+        for _, cmdPrefix := range []string{"connect ", "edit ", "delete ", "show ", "info "} {
+            if strings.HasPrefix(line, cmdPrefix) {
+                p := strings.TrimSpace(line[len(cmdPrefix):])
+                for _, h := range hosts {
+                    if strings.HasPrefix(h, p) {
+                        out = append(out, cmdPrefix+h)
+                    }
                 }
-            }
-            for _, h := range hostnames {
-                if strings.HasPrefix(h, p) {
-                    out = append(out, "connect "+h)
+                for _, h := range hostnames {
+                    if strings.HasPrefix(h, p) {
+                        out = append(out, cmdPrefix+h)
+                    }
                 }
-            }
-            for _, ip := range ips {
-                if strings.HasPrefix(ip, p) {
-                    out = append(out, "connect "+ip)
+                for _, ip := range ips {
+                    if strings.HasPrefix(ip, p) {
+                        out = append(out, cmdPrefix+ip)
+                    }
                 }
-            }
-            for _, id := range ids {
-                if strings.HasPrefix(id, p) {
-                    out = append(out, "connect "+id)
+                for _, id := range ids {
+                    if strings.HasPrefix(id, p) {
+                        out = append(out, cmdPrefix+id)
+                    }
                 }
+                return out
             }
-            return out
         }
         for _, c := range commands {
             if strings.HasPrefix(c, line) {
