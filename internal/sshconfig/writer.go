@@ -346,6 +346,55 @@ func renderHostBlock(cfg *HostConfig) string {
 		b.WriteString("\n")
 	}
 
+	// Global configuration options
+	if cfg.ServerAliveCountMax != "" {
+		b.WriteString("  ServerAliveCountMax ")
+		b.WriteString(cfg.ServerAliveCountMax)
+		b.WriteString("\n")
+	}
+
+	if cfg.AddKeysToAgent != "" {
+		b.WriteString("  AddKeysToAgent ")
+		b.WriteString(cfg.AddKeysToAgent)
+		b.WriteString("\n")
+	}
+
+	if cfg.UseKeychain != "" {
+		b.WriteString("  UseKeychain ")
+		b.WriteString(cfg.UseKeychain)
+		b.WriteString("\n")
+	}
+
+	if cfg.PubkeyAcceptedAlgorithms != "" {
+		b.WriteString("  PubkeyAcceptedAlgorithms ")
+		b.WriteString(cfg.PubkeyAcceptedAlgorithms)
+		b.WriteString("\n")
+	}
+
+	if cfg.StrictHostKeyChecking != "" {
+		b.WriteString("  StrictHostKeyChecking ")
+		b.WriteString(cfg.StrictHostKeyChecking)
+		b.WriteString("\n")
+	}
+
+	if cfg.UserKnownHostsFile != "" {
+		b.WriteString("  UserKnownHostsFile ")
+		b.WriteString(cfg.UserKnownHostsFile)
+		b.WriteString("\n")
+	}
+
+	if cfg.Compression != "" {
+		b.WriteString("  Compression ")
+		b.WriteString(cfg.Compression)
+		b.WriteString("\n")
+	}
+
+	if cfg.TCPKeepAlive != "" {
+		b.WriteString("  TCPKeepAlive ")
+		b.WriteString(cfg.TCPKeepAlive)
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 
@@ -367,6 +416,11 @@ func parseHostBlock(lines []string, start, end int) (*HostConfig, error) {
 		return nil, fmt.Errorf("empty host name")
 	}
 	cfg.Name = hostParts[0]
+
+	// Mark global configs
+	if cfg.Name == "*" {
+		cfg.IsGlobal = true
+	}
 
 	// Parse configuration directives
 	for i := start + 1; i < end; i++ {
@@ -403,6 +457,22 @@ func parseHostBlock(lines []string, start, end int) (*HostConfig, error) {
 			cfg.ForwardAgent = value
 		case "serveraliveinterval":
 			cfg.ServerAliveInterval = value
+		case "serveralivecountmax":
+			cfg.ServerAliveCountMax = value
+		case "addkeystoagent":
+			cfg.AddKeysToAgent = value
+		case "usekeychain":
+			cfg.UseKeychain = value
+		case "pubkeyacceptedalgorithms":
+			cfg.PubkeyAcceptedAlgorithms = value
+		case "stricthostkeychecking":
+			cfg.StrictHostKeyChecking = value
+		case "userknownhostsfile":
+			cfg.UserKnownHostsFile = value
+		case "compression":
+			cfg.Compression = value
+		case "tcpkeepalive":
+			cfg.TCPKeepAlive = value
 		}
 	}
 

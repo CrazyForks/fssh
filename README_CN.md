@@ -36,7 +36,33 @@ fssh 是一个 macOS 专用的 SSH 密钥管理工具，解决两个痛点：
 
 ## 快速开始
 
-### 第一步：安装
+### 方式一：交互式设置向导（推荐）
+
+最简单的开始方式 - 一条命令搞定所有配置：
+
+```bash
+# 编译项目
+go build ./cmd/fssh
+
+# 运行交互式设置向导
+./fssh init
+```
+
+向导会引导你完成：
+1. **选择认证模式** - Touch ID 或 OTP
+2. **安装二进制文件** - 自动复制 fssh 到 /usr/local/bin
+3. **导入 SSH 密钥** - 扫描并导入 ~/.ssh/ 下的密钥
+4. **配置开机自启** - 设置 LaunchAgent 自动启动
+5. **启动 agent** - 立即启动 fssh agent
+6. **配置 SSH 客户端** - 自动更新 ~/.ssh/config
+
+完成后，你就可以直接使用 SSH 并通过 Touch ID/OTP 认证了！
+
+### 方式二：手动设置（进阶）
+
+适合希望逐步控制每个环节的用户：
+
+#### 第一步：安装
 
 ```bash
 # 下载源码后，编译
@@ -46,7 +72,7 @@ go build ./cmd/fssh
 sudo cp fssh /usr/local/bin/
 ```
 
-### 第二步：初始化
+#### 第二步：初始化
 
 根据你的设备选择认证模式：
 
@@ -67,7 +93,7 @@ OTP 模式初始化时会：
 2. 显示 TOTP 密钥，需要添加到手机的验证器 App（如 Google Authenticator、Authy）
 3. 显示 10 个恢复码，**请务必保存好**
 
-### 第三步：导入 SSH 私钥
+#### 第三步：导入 SSH 私钥
 
 ```bash
 # 导入你的 SSH 私钥（如果私钥有密码，会提示输入）
@@ -79,7 +105,7 @@ fssh import --alias mykey --file ~/.ssh/id_rsa --ask-passphrase
 - `--file`：私钥文件路径
 - `--ask-passphrase`：如果私钥有密码保护，加上这个参数
 
-### 第四步：启动 Agent
+#### 第四步：启动 Agent
 
 ```bash
 fssh agent
@@ -87,7 +113,7 @@ fssh agent
 
 启动后，Agent 会在后台运行，监听 `~/.fssh/agent.sock`。
 
-### 第五步：配置 SSH 使用 fssh Agent
+#### 第五步：配置 SSH 使用 fssh Agent
 
 编辑 `~/.ssh/config` 文件，在**最开头**添加：
 
@@ -98,11 +124,75 @@ Host *
 
 这样所有 SSH 连接都会通过 fssh Agent。
 
-### 第六步：开始使用
+#### 第六步：开始使用
 
 ```bash
 # 正常使用 SSH 命令，会自动弹出 Touch ID 或要求输入 OTP
 ssh user@yourserver.com
+```
+
+---
+
+## 交互式设置向导详解
+
+交互式向导（`fssh init`）会执行以下步骤：
+
+### 详细流程
+
+**步骤 1：欢迎和初始化检查**
+- 显示欢迎横幅
+- 检查是否已经初始化过
+- 如果需要重新初始化，会提示确认
+
+**步骤 2：选择认证模式**
+- 自动检测你的 Mac 是否支持 Touch ID
+- 提示选择：
+  - Touch ID（推荐用于支持的设备）
+  - OTP（适用于不支持 Touch ID 的设备或需要额外安全性）
+
+**步骤 3：执行认证初始化**
+- 执行所选认证模式的设置
+- Touch ID 模式：生成主密钥并存储到 macOS 钥匙串
+- OTP 模式：设置密码 + TOTP，生成恢复码
+
+**步骤 4：安装二进制文件**
+- 检测当前可执行文件位置
+- 复制 fssh 到 `/usr/local/bin/`（需要 sudo）
+- 设置正确的权限（755）
+
+**步骤 5：导入 SSH 密钥**
+- 扫描 `~/.ssh/` 目录查找私钥
+- 检测标准密钥文件：`id_rsa`、`id_ed25519`、`id_ecdsa` 等
+- 识别加密和未加密的密钥
+- 逐个提示导入：
+  - 建议的别名（例如 `id_ed25519` → `ed25519`）
+  - 如果密钥加密，提示输入密码
+- 使用加密保护导入密钥
+
+**步骤 6：配置 LaunchAgent**
+- 在 `~/Library/LaunchAgents/com.fssh.agent.plist` 创建 plist 文件
+- 加载 LaunchAgent 实现登录时自动启动
+- 配置 agent 持续运行
+
+**步骤 7：启动 Agent**
+- 等待 agent 启动（最多 10 秒）
+- 验证 `~/.fssh/agent.sock` 的 socket 连接
+
+**步骤 8：配置 SSH 客户端**
+- 提示更新 `~/.ssh/config`
+- 修改前创建备份
+- 在开头添加 `IdentityAgent` 配置以实现 SSH 自动集成
+
+### 非交互模式
+
+适用于自动化、脚本或 CI/CD：
+
+```bash
+# 跳过所有交互式提示
+fssh init --non-interactive --mode touchid
+
+# 或直接指定模式
+fssh init --mode otp
 ```
 
 ---
@@ -160,14 +250,29 @@ fssh> exit                    # 退出
 
 ## 常用命令一览
 
+### 初始化命令
+
 | 命令 | 说明 |
 |------|------|
-| `fssh init --mode touchid` | 初始化（Touch ID 模式） |
-| `fssh init --mode otp` | 初始化（OTP 模式） |
+| `fssh init` | 交互式设置向导（推荐） |
+| `fssh init --interactive` | 显式运行交互式向导 |
+| `fssh init --mode touchid` | 使用 Touch ID 初始化（非交互式） |
+| `fssh init --mode otp` | 使用 OTP 初始化（非交互式） |
+| `fssh init --non-interactive --mode touchid` | 非交互模式，适用于脚本/CI |
+
+### 密钥管理
+
+| 命令 | 说明 |
+|------|------|
 | `fssh import --alias 名字 --file 路径 --ask-passphrase` | 导入私钥 |
 | `fssh list` | 列出已导入的密钥 |
 | `fssh export --alias 名字 --out 路径` | 导出密钥（备份） |
 | `fssh remove --alias 名字` | 删除密钥 |
+
+### Agent 和 Shell
+
+| 命令 | 说明 |
+|------|------|
 | `fssh agent` | 启动 Agent |
 | `fssh status` | 查看状态 |
 | `fssh shell` | 进入交互式 Shell |

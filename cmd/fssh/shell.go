@@ -63,7 +63,7 @@ func runShell() {
         }
     }
 
-    commands := []string{"list", "search", "connect", "add", "edit", "delete", "show", "info", "suspend", "help", "exit", "quit"}
+    commands := []string{"list", "search", "connect", "add", "edit", "delete", "show", "info", "global", "suspend", "help", "exit", "quit"}
     l := setupLiner(commands, ctx.hosts, ctx.hostnames, ctx.ips, ctx.ids)
     ctx.liner = l
     defer func() {
@@ -105,6 +105,11 @@ func runShell() {
             fmt.Println("  delete <host>     - Delete host")
             fmt.Println("  show <host>       - Show host details")
             fmt.Println("  info <id|alias|hostname|ip> - Show host info by any identifier")
+            fmt.Println("  global [show|edit|set|unset] - Manage global SSH config (Host *)")
+            fmt.Println("    global show           - Display current global config")
+            fmt.Println("    global edit           - Edit global config interactively")
+            fmt.Println("    global set <key> <value> - Set a single option")
+            fmt.Println("    global unset <key>    - Remove a single option")
             fmt.Println("  suspend           - Suspend fssh (use 'fg' to resume)")
             fmt.Println("  help              - Show this help")
             fmt.Println("  exit / quit       - Exit shell")
@@ -142,6 +147,16 @@ func runShell() {
         if strings.HasPrefix(line, "info ") {
             args := strings.TrimSpace(line[5:])
             if err := cmdInfo(ctx, args); err != nil {
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+            }
+            continue
+        }
+        if strings.HasPrefix(line, "global") {
+            args := ""
+            if len(line) > 6 {
+                args = strings.TrimSpace(line[6:])
+            }
+            if err := cmdGlobal(ctx, args); err != nil {
                 fmt.Fprintf(os.Stderr, "Error: %v\n", err)
             }
             continue
@@ -283,6 +298,48 @@ func setupLiner(commands, hosts, hostnames, ips, ids []string) *liner.State {
                 }
                 return out
             }
+        }
+        // Tab completion for global subcommands
+        if strings.HasPrefix(line, "global ") {
+            subCmd := strings.TrimSpace(line[7:])
+            globalSubCmds := []string{"show", "edit", "set", "unset"}
+
+            // Complete subcommand
+            if !strings.Contains(subCmd, " ") {
+                for _, sc := range globalSubCmds {
+                    if strings.HasPrefix(sc, subCmd) {
+                        out = append(out, "global "+sc)
+                    }
+                }
+                return out
+            }
+
+            // Complete option names for "global set" and "global unset"
+            if strings.HasPrefix(subCmd, "set ") || strings.HasPrefix(subCmd, "unset ") {
+                var prefix string
+                if strings.HasPrefix(subCmd, "set ") {
+                    prefix = strings.TrimSpace(subCmd[4:])
+                } else {
+                    prefix = strings.TrimSpace(subCmd[6:])
+                }
+
+                // Only complete key name (before space)
+                if !strings.Contains(prefix, " ") {
+                    optionNames := sshconfig.GetGlobalOptionNames()
+                    for _, opt := range optionNames {
+                        if strings.HasPrefix(strings.ToLower(opt), strings.ToLower(prefix)) {
+                            if strings.HasPrefix(subCmd, "set ") {
+                                out = append(out, "global set "+opt)
+                            } else {
+                                out = append(out, "global unset "+opt)
+                            }
+                        }
+                    }
+                    return out
+                }
+            }
+
+            return out
         }
         for _, c := range commands {
             if strings.HasPrefix(c, line) {

@@ -37,7 +37,33 @@ Your SSH private keys are stored encrypted. They can only be decrypted after Tou
 
 ## Quick Start
 
-### Step 1: Install
+### Option A: Interactive Setup Wizard (Recommended)
+
+The easiest way to get started - one command does everything:
+
+```bash
+# Build the project
+go build ./cmd/fssh
+
+# Run interactive setup wizard
+./fssh init
+```
+
+The wizard will guide you through:
+1. **Choose authentication mode** - Touch ID or OTP
+2. **Install binary** - Automatically copies fssh to /usr/local/bin
+3. **Import SSH keys** - Scans and imports keys from ~/.ssh/
+4. **Configure auto-start** - Sets up LaunchAgent for automatic startup
+5. **Start agent** - Launches fssh agent immediately
+6. **Configure SSH client** - Updates ~/.ssh/config automatically
+
+After completion, you're ready to use SSH with Touch ID/OTP authentication!
+
+### Option B: Manual Setup (Advanced)
+
+For users who prefer step-by-step control:
+
+#### Step 1: Install
 
 ```bash
 # After downloading the source code, build it
@@ -47,7 +73,7 @@ go build ./cmd/fssh
 sudo cp fssh /usr/local/bin/
 ```
 
-### Step 2: Initialize
+#### Step 2: Initialize
 
 Choose an authentication mode based on your device:
 
@@ -68,7 +94,7 @@ During OTP mode initialization:
 2. A TOTP secret will be displayed - add it to an authenticator app (e.g., Google Authenticator, Authy)
 3. 10 recovery codes will be shown - **save them securely**
 
-### Step 3: Import SSH Private Key
+#### Step 3: Import SSH Private Key
 
 ```bash
 # Import your SSH private key (you'll be prompted for passphrase if the key has one)
@@ -80,7 +106,7 @@ Parameters:
 - `--file`: Path to the private key file
 - `--ask-passphrase`: Add this if the private key is passphrase-protected
 
-### Step 4: Start the Agent
+#### Step 4: Start the Agent
 
 ```bash
 fssh agent
@@ -88,7 +114,7 @@ fssh agent
 
 Once started, the Agent runs in the background, listening on `~/.fssh/agent.sock`.
 
-### Step 5: Configure SSH to Use fssh Agent
+#### Step 5: Configure SSH to Use fssh Agent
 
 Edit `~/.ssh/config` and add at the **very beginning**:
 
@@ -99,11 +125,75 @@ Host *
 
 This routes all SSH connections through fssh Agent.
 
-### Step 6: Start Using
+#### Step 6: Start Using
 
 ```bash
 # Use SSH normally - Touch ID or OTP prompt will appear automatically
 ssh user@yourserver.com
+```
+
+---
+
+## Interactive Setup Wizard Details
+
+The interactive wizard (`fssh init`) performs the following steps:
+
+### Step-by-step Process
+
+**Step 1: Welcome & Initialization Check**
+- Displays welcome banner
+- Checks if fssh is already initialized
+- Prompts for confirmation if reinitializing
+
+**Step 2: Choose Authentication Mode**
+- Auto-detects Touch ID availability on your Mac
+- Prompts you to choose between:
+  - Touch ID (recommended for supported devices)
+  - OTP (for devices without Touch ID or additional security)
+
+**Step 3: Initialize Authentication**
+- Executes the selected authentication mode setup
+- For Touch ID: Generates and stores master key in macOS Keychain
+- For OTP: Sets up password + TOTP with recovery codes
+
+**Step 4: Binary Installation**
+- Detects current executable location
+- Copies fssh to `/usr/local/bin/` (requires sudo)
+- Sets proper permissions (755)
+
+**Step 5: Import SSH Keys**
+- Scans `~/.ssh/` directory for private keys
+- Detects standard key files: `id_rsa`, `id_ed25519`, `id_ecdsa`, etc.
+- Identifies encrypted vs unencrypted keys
+- Prompts for each key:
+  - Suggested alias (e.g., `id_ed25519` → `ed25519`)
+  - Passphrase if key is encrypted
+- Imports keys with encryption protection
+
+**Step 6: Configure LaunchAgent**
+- Creates plist file at `~/Library/LaunchAgents/com.fssh.agent.plist`
+- Loads LaunchAgent for auto-start on login
+- Configures agent to keep running
+
+**Step 7: Start Agent**
+- Waits for agent to start (up to 10 seconds)
+- Verifies socket connection at `~/.fssh/agent.sock`
+
+**Step 8: Configure SSH Client**
+- Prompts to update `~/.ssh/config`
+- Creates backup before modification
+- Prepends `IdentityAgent` configuration for automatic SSH integration
+
+### Non-Interactive Mode
+
+For automation, scripts, or CI/CD:
+
+```bash
+# Skip all interactive prompts
+fssh init --non-interactive --mode touchid
+
+# Or specify mode directly
+fssh init --mode otp
 ```
 
 ---
@@ -161,14 +251,29 @@ fssh> exit                    # Exit the shell
 
 ## Command Reference
 
+### Initialization Commands
+
 | Command | Description |
 |---------|-------------|
-| `fssh init --mode touchid` | Initialize (Touch ID mode) |
-| `fssh init --mode otp` | Initialize (OTP mode) |
+| `fssh init` | Interactive setup wizard (recommended) |
+| `fssh init --interactive` | Explicitly run interactive wizard |
+| `fssh init --mode touchid` | Initialize with Touch ID (non-interactive) |
+| `fssh init --mode otp` | Initialize with OTP (non-interactive) |
+| `fssh init --non-interactive --mode touchid` | Non-interactive mode for scripts/CI |
+
+### Key Management
+
+| Command | Description |
+|---------|-------------|
 | `fssh import --alias name --file path --ask-passphrase` | Import a private key |
 | `fssh list` | List imported keys |
 | `fssh export --alias name --out path` | Export a key (backup) |
 | `fssh remove --alias name` | Remove a key |
+
+### Agent & Shell
+
+| Command | Description |
+|---------|-------------|
 | `fssh agent` | Start the Agent |
 | `fssh status` | Check status |
 | `fssh shell` | Enter interactive shell |

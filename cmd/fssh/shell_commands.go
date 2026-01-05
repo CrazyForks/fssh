@@ -604,3 +604,308 @@ func reloadHosts(ctx *ShellContext) error {
 
 	return nil
 }
+
+// cmdGlobalShow displays the current Host * configuration
+func cmdGlobalShow(ctx *ShellContext) error {
+	cfg, found, err := sshconfig.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load global config: %w", err)
+	}
+
+	if !found {
+		fmt.Println("\nNo Host * block found in ~/.ssh/config")
+		fmt.Println("\nYou can create one with: global edit")
+		return nil
+	}
+
+	// Display all configured options
+	fmt.Println("\n=== Global SSH Configuration (Host *) ===")
+	fmt.Println()
+
+	displayed := false
+	if cfg.ServerAliveInterval != "" {
+		fmt.Printf("  ServerAliveInterval: %s\n", cfg.ServerAliveInterval)
+		displayed = true
+	}
+	if cfg.ServerAliveCountMax != "" {
+		fmt.Printf("  ServerAliveCountMax: %s\n", cfg.ServerAliveCountMax)
+		displayed = true
+	}
+	if cfg.ForwardAgent != "" {
+		fmt.Printf("  ForwardAgent: %s\n", cfg.ForwardAgent)
+		displayed = true
+	}
+	if cfg.IdentityAgent != "" {
+		fmt.Printf("  IdentityAgent: %s\n", cfg.IdentityAgent)
+		displayed = true
+	}
+	if cfg.AddKeysToAgent != "" {
+		fmt.Printf("  AddKeysToAgent: %s\n", cfg.AddKeysToAgent)
+		displayed = true
+	}
+	if cfg.UseKeychain != "" {
+		fmt.Printf("  UseKeychain: %s\n", cfg.UseKeychain)
+		displayed = true
+	}
+	if cfg.PubkeyAcceptedAlgorithms != "" {
+		fmt.Printf("  PubkeyAcceptedAlgorithms: %s\n", cfg.PubkeyAcceptedAlgorithms)
+		displayed = true
+	}
+	if cfg.StrictHostKeyChecking != "" {
+		fmt.Printf("  StrictHostKeyChecking: %s\n", cfg.StrictHostKeyChecking)
+		displayed = true
+	}
+	if cfg.UserKnownHostsFile != "" {
+		fmt.Printf("  UserKnownHostsFile: %s\n", cfg.UserKnownHostsFile)
+		displayed = true
+	}
+	if cfg.Compression != "" {
+		fmt.Printf("  Compression: %s\n", cfg.Compression)
+		displayed = true
+	}
+	if cfg.TCPKeepAlive != "" {
+		fmt.Printf("  TCPKeepAlive: %s\n", cfg.TCPKeepAlive)
+		displayed = true
+	}
+
+	if !displayed {
+		fmt.Println("  (empty)")
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// cmdGlobalEdit interactively edits global configuration
+func cmdGlobalEdit(ctx *ShellContext) error {
+	cfg, found, err := sshconfig.LoadGlobalConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load global config: %w", err)
+	}
+
+	if !found {
+		// Prompt user to create
+		fmt.Println("\nHost * block does not exist.")
+		line, err := ctx.liner.Prompt("Create it now? [Y/n]: ")
+		if err != nil {
+			return err
+		}
+		if strings.ToLower(strings.TrimSpace(line)) == "n" {
+			fmt.Println("Cancelled")
+			return nil
+		}
+		cfg = sshconfig.NewGlobalConfig()
+	}
+
+	fmt.Println("\n=== Edit Global Configuration (Host *) ===")
+	fmt.Println("Press Enter to keep current value, type new value to change, or '-' to clear")
+	fmt.Println("Type '?' to see detailed help for an option")
+	fmt.Println()
+
+	// Helper function to edit a single field
+	editField := func(key, current string) string {
+		desc, help, validValues := sshconfig.GetGlobalOptionHelp(key)
+		if current == "" {
+			current = "(not set)"
+		}
+		fmt.Printf("\n%s\n", desc)
+		if len(validValues) > 0 {
+			fmt.Printf("Valid values: %s\n", strings.Join(validValues, ", "))
+		}
+		line, _ := ctx.liner.Prompt(fmt.Sprintf("%s [%s]: ", key, current))
+		line = strings.TrimSpace(line)
+		if line == "?" {
+			fmt.Printf("\n%s\n\n", help)
+			line, _ = ctx.liner.Prompt(fmt.Sprintf("%s [%s]: ", key, current))
+			line = strings.TrimSpace(line)
+		}
+		if line == "-" {
+			return ""
+		}
+		if line != "" {
+			return line
+		}
+		if current == "(not set)" {
+			return ""
+		}
+		// Return original value (unchanged)
+		return current
+	}
+
+	// Edit ServerAliveInterval
+	result := editField("ServerAliveInterval", cfg.ServerAliveInterval)
+	if result != cfg.ServerAliveInterval {
+		cfg.ServerAliveInterval = result
+	}
+
+	// Edit ServerAliveCountMax
+	result = editField("ServerAliveCountMax", cfg.ServerAliveCountMax)
+	if result != cfg.ServerAliveCountMax {
+		cfg.ServerAliveCountMax = result
+	}
+
+	// Edit ForwardAgent
+	result = editField("ForwardAgent", cfg.ForwardAgent)
+	if result != cfg.ForwardAgent {
+		cfg.ForwardAgent = result
+	}
+
+	// Edit IdentityAgent
+	result = editField("IdentityAgent", cfg.IdentityAgent)
+	if result != cfg.IdentityAgent {
+		cfg.IdentityAgent = result
+	}
+
+	// Edit AddKeysToAgent
+	result = editField("AddKeysToAgent", cfg.AddKeysToAgent)
+	if result != cfg.AddKeysToAgent {
+		cfg.AddKeysToAgent = result
+	}
+
+	// Edit UseKeychain
+	result = editField("UseKeychain", cfg.UseKeychain)
+	if result != cfg.UseKeychain {
+		cfg.UseKeychain = result
+	}
+
+	// Edit PubkeyAcceptedAlgorithms
+	result = editField("PubkeyAcceptedAlgorithms", cfg.PubkeyAcceptedAlgorithms)
+	if result != cfg.PubkeyAcceptedAlgorithms {
+		cfg.PubkeyAcceptedAlgorithms = result
+	}
+
+	// Edit StrictHostKeyChecking
+	result = editField("StrictHostKeyChecking", cfg.StrictHostKeyChecking)
+	if result != cfg.StrictHostKeyChecking {
+		cfg.StrictHostKeyChecking = result
+	}
+
+	// Edit UserKnownHostsFile
+	result = editField("UserKnownHostsFile", cfg.UserKnownHostsFile)
+	if result != cfg.UserKnownHostsFile {
+		cfg.UserKnownHostsFile = result
+	}
+
+	// Edit Compression
+	result = editField("Compression", cfg.Compression)
+	if result != cfg.Compression {
+		cfg.Compression = result
+	}
+
+	// Edit TCPKeepAlive
+	result = editField("TCPKeepAlive", cfg.TCPKeepAlive)
+	if result != cfg.TCPKeepAlive {
+		cfg.TCPKeepAlive = result
+	}
+
+	// Confirm and save
+	fmt.Println()
+	confirm, _ := ctx.liner.Prompt("Save global configuration? [Y/n]: ")
+	if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+		fmt.Println("Cancelled")
+		return nil
+	}
+
+	if err := sshconfig.WriteGlobalConfig(cfg); err != nil {
+		return fmt.Errorf("failed to save: %w", err)
+	}
+
+	fmt.Println("\n✓ Global configuration updated")
+	fmt.Println("✓ Backup created")
+	return nil
+}
+
+// cmdGlobalSet quickly sets a single option
+func cmdGlobalSet(ctx *ShellContext, args string) error {
+	// Parse "key value"
+	parts := strings.SplitN(strings.TrimSpace(args), " ", 2)
+	if len(parts) < 2 {
+		fmt.Println("Usage: global set <key> <value>")
+		fmt.Println("\nSupported options:")
+
+		// Display all options with descriptions
+		for _, key := range sshconfig.GetGlobalOptionNames() {
+			desc, _, validValues := sshconfig.GetGlobalOptionHelp(key)
+			fmt.Printf("  %-30s - %s", key, desc)
+			if len(validValues) > 0 {
+				fmt.Printf(" (%s)", strings.Join(validValues, "/"))
+			}
+			fmt.Println()
+		}
+
+		fmt.Println("\nExample:")
+		fmt.Println("  global set ServerAliveInterval 60")
+		fmt.Println("\nTip: Use 'global edit' for interactive editing with help")
+		return nil
+	}
+
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+
+	if err := sshconfig.SetGlobalOption(key, value); err != nil {
+		return fmt.Errorf("failed to set option: %w", err)
+	}
+
+	fmt.Printf("\n✓ Set %s = %s\n", key, value)
+	fmt.Println("✓ Backup created")
+	return nil
+}
+
+// cmdGlobalUnset removes a single option
+func cmdGlobalUnset(ctx *ShellContext, args string) error {
+	key := strings.TrimSpace(args)
+	if key == "" {
+		fmt.Println("Usage: global unset <key>")
+		fmt.Println("\nSupported options:")
+
+		// Display all options with descriptions
+		for _, key := range sshconfig.GetGlobalOptionNames() {
+			desc, _, _ := sshconfig.GetGlobalOptionHelp(key)
+			fmt.Printf("  %-30s - %s\n", key, desc)
+		}
+
+		fmt.Println("\nExample:")
+		fmt.Println("  global unset UseKeychain")
+		return nil
+	}
+
+	if err := sshconfig.UnsetGlobalOption(key); err != nil {
+		return fmt.Errorf("failed to unset option: %w", err)
+	}
+
+	fmt.Printf("\n✓ Unset %s\n", key)
+	fmt.Println("✓ Backup created")
+	return nil
+}
+
+// cmdGlobal routes global subcommands
+func cmdGlobal(ctx *ShellContext, args string) error {
+	args = strings.TrimSpace(args)
+
+	if args == "" || args == "show" {
+		return cmdGlobalShow(ctx)
+	}
+	if args == "edit" {
+		return cmdGlobalEdit(ctx)
+	}
+	if args == "set" || strings.HasPrefix(args, "set ") {
+		if args == "set" {
+			return cmdGlobalSet(ctx, "")
+		}
+		return cmdGlobalSet(ctx, args[4:])
+	}
+	if args == "unset" || strings.HasPrefix(args, "unset ") {
+		if args == "unset" {
+			return cmdGlobalUnset(ctx, "")
+		}
+		return cmdGlobalUnset(ctx, args[6:])
+	}
+
+	// Unknown subcommand
+	fmt.Println("Unknown global subcommand. Usage:")
+	fmt.Println("  global show           - Display current global config")
+	fmt.Println("  global edit           - Edit global config interactively")
+	fmt.Println("  global set <key> <value> - Set a single option")
+	fmt.Println("  global unset <key>    - Remove a single option")
+	return nil
+}

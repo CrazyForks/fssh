@@ -62,20 +62,40 @@ func usage() {
 func cmdInit() {
     fs := flag.NewFlagSet("init", flag.ExitOnError)
     force := fs.Bool("force", false, "recreate master key if exists")
-    mode := fs.String("mode", "touchid", "authentication mode: touchid or otp")
+    mode := fs.String("mode", "", "authentication mode: touchid or otp (empty = interactive prompt)")
     seedTTL := fs.Int("seed-unlock-ttl", 3600, "OTP seed cache time (seconds), OTP mode only")
     algorithm := fs.String("algorithm", "SHA1", "TOTP algorithm: SHA1, SHA256, SHA512, OTP mode only")
     digits := fs.Int("digits", 6, "TOTP digits: 6 or 8, OTP mode only")
+    interactive := fs.Bool("interactive", false, "run full setup wizard")
+    nonInteractive := fs.Bool("non-interactive", false, "disable all interactive prompts")
     fs.Parse(os.Args[2:])
 
+    // Decide whether to run interactive mode
+    isTTY := term.IsTerminal(int(os.Stdin.Fd()))
+    shouldRunInteractive := *interactive || (isTTY && *mode == "" && !*nonInteractive)
+
+    if shouldRunInteractive {
+        runInteractiveSetup(*force, *seedTTL, *algorithm, *digits)
+    } else {
+        runLegacyInit(*force, *mode, *seedTTL, *algorithm, *digits)
+    }
+}
+
+// runLegacyInit executes the original non-interactive initialization
+func runLegacyInit(force bool, mode string, seedTTL int, algorithm string, digits int) {
+    // Default to touchid if mode not specified
+    if mode == "" {
+        mode = "touchid"
+    }
+
     // 根据模式选择初始化方式
-    switch *mode {
+    switch mode {
     case "touchid":
-        initTouchIDMode(*force)
+        initTouchIDMode(force)
     case "otp":
-        initOTPMode(*force, *seedTTL, *algorithm, *digits)
+        initOTPMode(force, seedTTL, algorithm, digits)
     default:
-        fatal(fmt.Errorf("不支持的认证模式: %s (支持 touchid 或 otp)", *mode))
+        fatal(fmt.Errorf("不支持的认证模式: %s (支持 touchid 或 otp)", mode))
     }
 }
 

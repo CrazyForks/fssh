@@ -7,7 +7,10 @@
       "WebSearch",
       "Bash(go build:*)",
       "Bash(./fssh)",
-      "Bash(./fssh status:*)"
+      "Bash(./fssh status:*)",
+      "Bash(tree:*)",
+      "Bash(go doc:*)",
+      "Bash(launchctl list:*)"
     ],
     "deny": [],
     "ask": []

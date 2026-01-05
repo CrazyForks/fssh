@@ -88,6 +88,21 @@ func PromptConfirm(prompt string) bool {
 	return answer == "y" || answer == "yes"
 }
 
+// PromptInput 提示输入普通文本（可见回显）
+func PromptInput(prompt string) (string, error) {
+	fmt.Print(prompt)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return "", fmt.Errorf("读取输入失败: %w", err)
+		}
+		return "", nil // EOF
+	}
+
+	return strings.TrimSpace(scanner.Text()), nil
+}
+
 // ValidatePasswordStrength 验证密码强度
 func ValidatePasswordStrength(password string) error {
 	// 最小长度检查
