@@ -1,4 +1,4 @@
-# fssh - Secure and Simple SSH Key Management
+# fssh — Secure macOS SSH Key Manager with Touch ID & OTP Support
 
 ![Touch ID Fingerprint](images/finger.png)
 
@@ -9,6 +9,11 @@ fssh is a macOS-only SSH key management tool that solves two common pain points:
 1. **Entering private key passphrase every SSH login** → fssh lets you unlock with Touch ID or One-Time Password (OTP)
 2. **Forgetting server aliases in `~/.ssh/config`** → fssh provides an interactive shell with Tab completion for quick connections
 
+## Why use fssh for macOS SSH Management?
+If you are looking for a more secure alternative to ssh-agent on macOS, fssh provides:
+Biometric SSH Authentication: Use Touch ID to unlock SSH keys instead of typing long passphrases.
+Two-Factor Authentication (2FA) for SSH: Add an extra layer of security with TOTP/OTP for private keys.
+SSH Alias Discovery: Never forget your ~/.ssh/config aliases again with an interactive shell and tab-completion.
 ## How It Works
 
 ```
