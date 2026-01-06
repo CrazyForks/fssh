@@ -19,7 +19,8 @@ func PromptPassword(prompt string) (string, error) {
 		// 不是终端，从标准输入读取
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
-		return scanner.Text(), scanner.Err()
+		// 对于密码，只清理 ANSI 转义序列，保留其他字符
+		return cleanInput(scanner.Text()), scanner.Err()
 	}
 
 	// 终端环境，使用不回显的密码输入
@@ -61,7 +62,8 @@ func PromptCode(prompt string) (string, error) {
 		return "", fmt.Errorf("读取验证码失败: %w", err)
 	}
 
-	code := strings.TrimSpace(scanner.Text())
+	// 使用 cleanInput 清理控制字符
+	code := cleanInput(scanner.Text())
 
 	// 验证格式（6或8位数字）
 	if len(code) != 6 && len(code) != 8 {
@@ -83,9 +85,52 @@ func PromptConfirm(prompt string) bool {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
-	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+	answer := scanner.Text()
+
+	// 清理输入：移除空白和控制字符
+	answer = cleanInput(answer)
+	answer = strings.ToLower(answer)
 
 	return answer == "y" || answer == "yes"
+}
+
+// cleanInput 清理用户输入，移除控制序列和多余空白
+func cleanInput(input string) string {
+	// 移除前后空白
+	input = strings.TrimSpace(input)
+
+	// 移除 ANSI 转义序列和其他控制字符
+	var cleaned strings.Builder
+	inEscape := false
+	for _, r := range input {
+		// 检测 ANSI 转义序列开始
+		if r == '\x1b' || r == '\033' {
+			inEscape = true
+			continue
+		}
+
+		// 如果在转义序列中，跳过直到遇到字母
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+
+		// 过滤其他控制字符（除了换行和制表符，虽然我们也不需要它们）
+		if r < 32 || r == 127 {
+			continue
+		}
+
+		// 过滤 Unicode 空白字符
+		if r == '\u3000' || r == '\u00A0' {
+			continue
+		}
+
+		cleaned.WriteRune(r)
+	}
+
+	return strings.TrimSpace(cleaned.String())
 }
 
 // PromptInput 提示输入普通文本（可见回显）
@@ -100,7 +145,8 @@ func PromptInput(prompt string) (string, error) {
 		return "", nil // EOF
 	}
 
-	return strings.TrimSpace(scanner.Text()), nil
+	// 使用 cleanInput 清理控制字符
+	return cleanInput(scanner.Text()), nil
 }
 
 // ValidatePasswordStrength 验证密码强度

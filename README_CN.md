@@ -56,7 +56,30 @@ go build ./cmd/fssh
 5. **启动 agent** - 立即启动 fssh agent
 6. **配置 SSH 客户端** - 自动更新 ~/.ssh/config
 
-完成后，你就可以直接使用 SSH 并通过 Touch ID/OTP 认证了！
+**完成后的重要步骤：设置环境变量**
+
+向导完成后会显示需要设置的环境变量。将以下内容添加到你的 shell 配置文件：
+
+```bash
+export SSH_AUTH_SOCK=~/.fssh/agent.sock
+```
+
+配置文件位置：
+- **bash**: `~/.bashrc` 或 `~/.bash_profile`
+- **zsh**: `~/.zshrc`
+- **fish**: `~/.config/fish/config.fish`
+
+然后重新加载配置：
+```bash
+source ~/.zshrc  # 或你的 shell 配置文件
+```
+
+或使用自动设置脚本：
+```bash
+./contrib/setup-env.sh
+```
+
+设置完成后，你就可以直接使用 SSH 并通过 Touch ID/OTP 认证了！
 
 ### 方式二：手动设置（进阶）
 

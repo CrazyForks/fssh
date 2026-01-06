@@ -18,7 +18,9 @@
       "Bash(ssh-add:*)",
       "Bash(./fssh:*)",
       "Bash(go list:*)",
-      "Bash(ssh-keygen:*)"
+      "Bash(ssh-keygen:*)",
+      "Bash(go run:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

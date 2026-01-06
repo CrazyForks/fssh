@@ -11,6 +11,33 @@ import (
 	"github.com/peterh/liner"
 )
 
+// cleanLinerInput 清理 liner 输入，移除 ANSI 转义序列和控制字符
+func cleanLinerInput(input string) string {
+	input = strings.TrimSpace(input)
+	var cleaned strings.Builder
+	inEscape := false
+	for _, r := range input {
+		if r == '\x1b' || r == '\033' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEscape = false
+			}
+			continue
+		}
+		if r < 32 || r == 127 {
+			continue
+		}
+		if r == '\u3000' || r == '\u00A0' {
+			continue
+		}
+		cleaned.WriteRune(r)
+	}
+	return strings.TrimSpace(cleaned.String())
+}
+
 // ShellContext holds state for shell commands
 type ShellContext struct {
 	infos        []sshconfig.HostInfo
@@ -184,7 +211,8 @@ func cmdAdd(ctx *ShellContext) error {
 	}
 
 	confirm, _ := ctx.liner.Prompt("\nSave this configuration? [Y/n]: ")
-	if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+	confirm = cleanLinerInput(confirm)
+	if strings.ToLower(confirm) == "n" {
 		fmt.Println("Cancelled")
 		return nil
 	}
@@ -330,7 +358,8 @@ func cmdEdit(ctx *ShellContext, args string) error {
 
 	// Confirm and save
 	confirm, _ := ctx.liner.Prompt("\nSave changes? [Y/n]: ")
-	if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+	confirm = cleanLinerInput(confirm)
+	if strings.ToLower(confirm) == "n" {
 		fmt.Println("Cancelled")
 		return nil
 	}
@@ -369,7 +398,8 @@ func cmdDelete(ctx *ShellContext, args string) error {
 	}
 
 	line, _ := ctx.liner.Prompt("\nType 'yes' to confirm deletion: ")
-	if strings.TrimSpace(line) != "yes" {
+	line = cleanLinerInput(line)
+	if line != "yes" {
 		fmt.Println("Cancelled")
 		return nil
 	}
@@ -801,7 +831,8 @@ func cmdGlobalEdit(ctx *ShellContext) error {
 	// Confirm and save
 	fmt.Println()
 	confirm, _ := ctx.liner.Prompt("Save global configuration? [Y/n]: ")
-	if strings.ToLower(strings.TrimSpace(confirm)) == "n" {
+	confirm = cleanLinerInput(confirm)
+	if strings.ToLower(confirm) == "n" {
 		fmt.Println("Cancelled")
 		return nil
 	}
