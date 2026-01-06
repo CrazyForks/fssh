@@ -10,7 +10,15 @@
       "Bash(./fssh status:*)",
       "Bash(tree:*)",
       "Bash(go doc:*)",
-      "Bash(launchctl list:*)"
+      "Bash(launchctl list:*)",
+      "Bash(SSH_AUTH_SOCK=/Users/leo/.fssh/agent.sock ssh-add:*)",
+      "Bash(./fssh list:*)",
+      "Bash(pkill:*)",
+      "Bash(export SSH_AUTH_SOCK=/Users/leo/.fssh/agent.sock)",
+      "Bash(ssh-add:*)",
+      "Bash(./fssh:*)",
+      "Bash(go list:*)",
+      "Bash(ssh-keygen:*)"
     ],
     "deny": [],
     "ask": []

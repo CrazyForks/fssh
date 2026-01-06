@@ -321,7 +321,19 @@ fssh> exit                    # 退出
 2. 确认 `~/.ssh/config` 配置了 `IdentityAgent ~/.fssh/agent.sock`
 3. 或设置环境变量：`export SSH_AUTH_SOCK=~/.fssh/agent.sock`
 
-### 2. 输入后没有显示（光标不动）
+### 2. 运行 `fssh init` 时弹出 Keychain 授权对话框
+
+**提示内容**：「fssh 想要使用您存储在钥匙串中的机密信息」
+
+**原因**：macOS 安全机制，应用首次访问 Keychain 需要用户授权。
+
+**解决方法**：
+- ✅ 点击「允许」或输入 macOS 用户密码
+- 这是**正常且必要**的安全提示
+- 授权一次后，后续不会再提示
+- fssh 使用 Keychain 安全存储加密主密钥
+
+### 3. 输入后没有显示（光标不动）
 
 **原因**：终端控制问题。
 
@@ -331,7 +343,7 @@ fssh> exit                    # 退出
 ssh -tt user@server
 ```
 
-### 3. launchctl load 报错 "Load failed: 5: Input/output error"
+### 4. launchctl load 报错 "Load failed: 5: Input/output error"
 
 **原因**：服务已经加载过，或未完成初始化。
 

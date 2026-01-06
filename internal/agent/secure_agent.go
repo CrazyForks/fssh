@@ -21,7 +21,6 @@ import (
 
 type secureAgent struct {
 	authProvider auth.AuthProvider
-	metas        []store.EncryptedFile
 }
 
 func newSecureAgentWithTTL(ttlSeconds int) (*secureAgent, error) {
@@ -31,7 +30,22 @@ func newSecureAgentWithTTL(ttlSeconds int) (*secureAgent, error) {
 		return nil, err
 	}
 
-	// 加载所有加密私钥的元数据
+	agent := &secureAgent{
+		authProvider: provider,
+	}
+
+	// 加载密钥计数用于日志
+	metas, _ := agent.loadMetas()
+	log.Info("创建安全 agent", map[string]interface{}{
+		"auth_mode": provider.Mode(),
+		"key_count": len(metas),
+	})
+
+	return agent, nil
+}
+
+// loadMetas 动态加载所有加密私钥的元数据
+func (a *secureAgent) loadMetas() ([]store.EncryptedFile, error) {
 	dir := store.KeysDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
@@ -52,21 +66,18 @@ func newSecureAgentWithTTL(ttlSeconds int) (*secureAgent, error) {
 		}
 		metas = append(metas, m)
 	}
-
-	log.Info("创建安全 agent", map[string]interface{}{
-		"auth_mode": provider.Mode(),
-		"key_count": len(metas),
-	})
-
-	return &secureAgent{
-		authProvider: provider,
-		metas:        metas,
-	}, nil
+	return metas, nil
 }
 
 func (a *secureAgent) List() ([]*xagent.Key, error) {
+	// 动态加载最新的密钥列表
+	metas, err := a.loadMetas()
+	if err != nil {
+		return nil, err
+	}
+
 	var ks []*xagent.Key
-	for _, m := range a.metas {
+	for _, m := range metas {
 		if m.PubKey == "" {
 			continue
 		}
@@ -85,8 +96,15 @@ func (a *secureAgent) List() ([]*xagent.Key, error) {
 
 func (a *secureAgent) Sign(pubkey ssh.PublicKey, data []byte) (*ssh.Signature, error) {
 	fp := ssh.FingerprintSHA256(pubkey)
+
+	// 动态加载最新的密钥列表
+	metas, err := a.loadMetas()
+	if err != nil {
+		return nil, err
+	}
+
 	var alias string
-	for _, m := range a.metas {
+	for _, m := range metas {
 		if m.Fingerprint == fp {
 			alias = m.Alias
 			break
@@ -126,8 +144,15 @@ func (a *secureAgent) Sign(pubkey ssh.PublicKey, data []byte) (*ssh.Signature, e
 // Support RSA-SHA2 algorithms when requested by the client.
 func (a *secureAgent) SignWithFlags(pubkey ssh.PublicKey, data []byte, flags xagent.SignatureFlags) (*ssh.Signature, error) {
 	fp := ssh.FingerprintSHA256(pubkey)
+
+	// 动态加载最新的密钥列表
+	metas, err := a.loadMetas()
+	if err != nil {
+		return nil, err
+	}
+
 	var alias string
-	for _, m := range a.metas {
+	for _, m := range metas {
 		if m.Fingerprint == fp {
 			alias = m.Alias
 			break

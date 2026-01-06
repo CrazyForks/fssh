@@ -80,11 +80,42 @@ func initTouchIDMode(force bool) {
 		fmt.Println("master key already exists")
 		return
 	}
+
+	// 如果是重新初始化，给用户一个提示
+	if exists && force {
+		fmt.Println("正在重新初始化 master key...")
+	} else {
+		fmt.Println("正在初始化 master key...")
+		fmt.Println()
+		fmt.Println("⚠️  macOS 可能会弹出对话框:")
+		fmt.Println("   「fssh 想要使用您存储在钥匙串中的机密信息」")
+		fmt.Println()
+		fmt.Println("   这是正常的安全提示，请:")
+		fmt.Println("   1. 点击「允许」或输入您的 macOS 用户密码")
+		fmt.Println("   2. 首次授权后，后续不会再提示")
+		fmt.Println()
+	}
+
 	mk := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, mk); err != nil {
 		fatal(err)
 	}
+
+	fmt.Println("正在保存到 Keychain...")
 	if err := keychain.StoreMasterKey(mk, force); err != nil {
+		fmt.Println()
+		fmt.Println("❌ Keychain 操作失败")
+		fmt.Println()
+		fmt.Println("可能的原因:")
+		fmt.Println("  • 您点击了「拒绝」而不是「允许」")
+		fmt.Println("  • macOS 安全设置阻止了访问")
+		fmt.Println("  • Keychain 服务异常")
+		fmt.Println()
+		fmt.Println("解决方法:")
+		fmt.Println("  1. 重新运行: fssh init")
+		fmt.Println("  2. 这次请点击「允许」")
+		fmt.Println("  3. 如果仍失败，请检查系统「安全性与隐私」设置")
+		fmt.Println()
 		fatal(err)
 	}
 
@@ -93,7 +124,7 @@ func initTouchIDMode(force bool) {
 		fmt.Printf("警告: 保存认证模式失败: %v\n", err)
 	}
 
-	fmt.Println("initialized master key with Touch ID protection")
+	fmt.Println("✓ 已成功初始化 master key (Touch ID 保护)")
 }
 
 // deriveMasterKeyFromSeed 从 OTP seed 派生 master key

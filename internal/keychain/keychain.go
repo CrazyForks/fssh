@@ -3,6 +3,7 @@ package keychain
 import (
     "errors"
     "fmt"
+    "time"
 
     kc "github.com/keybase/go-keychain"
     "fssh/internal/macos"
@@ -61,7 +62,36 @@ func StoreMasterKey(key []byte, overwrite bool) error {
     it.SetAccount(account)
     it.SetAccessible(kc.AccessibleWhenUnlocked)
     it.SetData(key)
-    return kc.AddItem(it)
+
+    // Retry logic for Keychain authorization
+    // First authorization may take time or return temporary error
+    maxRetries := 3
+    for attempt := 1; attempt <= maxRetries; attempt++ {
+        err = kc.AddItem(it)
+        if err == nil {
+            return nil
+        }
+
+        // Check if it's a user cancellation (-128)
+        if kcErr, ok := err.(kc.Error); ok {
+            if kcErr == kc.ErrorUserCanceled {
+                return fmt.Errorf("用户取消了 Keychain 授权")
+            }
+            // If item already exists (despite our check), that's okay
+            if kcErr == kc.ErrorDuplicateItem {
+                return nil
+            }
+        }
+
+        // For other errors, retry after a short delay
+        if attempt < maxRetries {
+            // Wait briefly before retry (macOS authorization may need time)
+            time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+            continue
+        }
+    }
+
+    return fmt.Errorf("存储 master key 失败 (尝试 %d 次): %w", maxRetries, err)
 }
 
 func LoadMasterKey() ([]byte, error) {
@@ -101,10 +131,11 @@ func DeleteMasterKey() error {
     it.SetSecClass(kc.SecClassGenericPassword)
     it.SetService(serviceNew)
     it.SetAccount(account)
-    _ = kc.DeleteItem(it)
+    _ = kc.DeleteItem(it)  // Ignore errors, may not exist
     it2 := kc.NewItem()
     it2.SetSecClass(kc.SecClassGenericPassword)
     it2.SetService(serviceOld)
     it2.SetAccount(account)
-    return kc.DeleteItem(it2)
+    _ = kc.DeleteItem(it2)  // Ignore errors, may not exist
+    return nil
 }

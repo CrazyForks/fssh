@@ -113,20 +113,30 @@ func cmdImport() {
     if *alias == "" || *file == "" {
         fatal(errors.New("alias and file are required"))
     }
+
+    // 1. 读取私钥文件
     b, err := os.ReadFile(*file)
     if err != nil {
         fatal(err)
     }
-    mk, err := keychain.LoadMasterKey()
-    if err != nil {
-        fatal(err)
-    }
+
+    // 2. 先询问私钥密码
     p, err := resolvePassphrase(*pass, *ask, *passFile, *passStdin, "Input key passphrase: ")
     if err != nil { fatal(err) }
+
+    // 3. 解密私钥并创建记录（验证私钥和密码是否正确）
     rec, err := store.NewRecordFromPrivateKeyBytes(*alias, b, p, *comment)
     if err != nil {
         fatal(err)
     }
+
+    // 4. 私钥验证成功后，再要求 Touch ID 获取 master key
+    mk, err := keychain.LoadMasterKey()
+    if err != nil {
+        fatal(err)
+    }
+
+    // 5. 用 master key 加密并保存私钥
     if err := store.SaveEncryptedRecord(rec, mk); err != nil {
         fatal(err)
     }
@@ -271,9 +281,13 @@ func resolvePassphrase(cli string, ask bool, file string, stdin bool, prompt str
     if ask {
         fd := int(os.Stdin.Fd())
         if term.IsTerminal(fd) {
+            // Disable bracketed paste and focus events before reading password
+            fmt.Fprint(os.Stderr, "\033[?2004l")  // Disable bracketed paste mode
             fmt.Fprint(os.Stderr, prompt)
             b, err := term.ReadPassword(fd)
             fmt.Fprintln(os.Stderr)
+            // Re-enable bracketed paste after reading
+            fmt.Fprint(os.Stderr, "\033[?2004h")
             if err != nil { return "", err }
             return string(b), nil
         }
